@@ -151,6 +151,19 @@ type Registry struct {
 	providers map[string]CloudProviderInterface
 }
 
+// DefaultRegistry is the process-wide registry used by init-time provider registration.
+var DefaultRegistry = NewRegistry()
+
+// Register registers a provider into the default registry.
+func Register(provider CloudProviderInterface) error {
+	return DefaultRegistry.Register(provider)
+}
+
+// Get returns a provider from the default registry.
+func Get(name string) (CloudProviderInterface, error) {
+	return DefaultRegistry.Get(name)
+}
+
 // NewRegistry creates a new provider registry
 func NewRegistry() *Registry {
 	return &Registry{

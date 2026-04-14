@@ -1,10 +1,12 @@
 package alicloud
 
 import (
+	"context"
 	"testing"
 
 	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNewProvider validates provider creation
@@ -125,4 +127,33 @@ func TestProvider_DashboardURL(t *testing.T) {
 	url := p.DashboardURL("test-env")
 	assert.Contains(t, url, "rds.console.aliyun")
 	assert.Contains(t, url, "cn-hangzhou")
+}
+
+func TestProvider_ensureNetwork_Cached(t *testing.T) {
+	p := &Provider{region: "cn-hangzhou"}
+
+	vpcID1, vswID1, err := p.ensureNetwork(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "vpc-infracast-cn-hangzhou", vpcID1)
+	assert.Equal(t, "vsw-infracast-cn-hangzhou", vswID1)
+
+	vpcID2, vswID2, err := p.ensureNetwork(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, vpcID1, vpcID2)
+	assert.Equal(t, vswID1, vswID2)
+}
+
+func TestProvider_ensureNetwork_EmptyRegion(t *testing.T) {
+	p := &Provider{}
+
+	vpcID, vswID, err := p.ensureNetwork(context.Background())
+	require.Error(t, err)
+	assert.Equal(t, "", vpcID)
+	assert.Equal(t, "", vswID)
+}
+
+func TestAlicloudInitRegistersProvider(t *testing.T) {
+	p, err := providers.Get("alicloud")
+	require.NoError(t, err)
+	assert.Equal(t, "alicloud", p.Name())
 }

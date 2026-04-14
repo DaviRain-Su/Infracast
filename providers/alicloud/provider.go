@@ -4,6 +4,7 @@ package alicloud
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/auth/credentials"
@@ -22,6 +23,8 @@ type Provider struct {
 	rdsClient       *rds.Client
 	kvstoreClient   *r_kvstore.Client
 	ossClient       *oss.Client
+	networkCache    *networkState
+	networkMu       sync.RWMutex
 }
 
 // NewProvider creates a new AliCloud provider instance
@@ -53,6 +56,7 @@ func NewProvider(region, accessKeyID, accessKeySecret string) (*Provider, error)
 		rdsClient:       rdsClient,
 		kvstoreClient:   kvstoreClient,
 		ossClient:       ossClient,
+		networkCache:    &networkState{},
 	}, nil
 }
 
@@ -81,6 +85,10 @@ func (p *Provider) Regions() []providers.Region {
 func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.DatabaseSpec) (*providers.DatabaseOutput, error) {
 	if p.rdsClient == nil {
 		return nil, fmt.Errorf("RDS client not initialized")
+	}
+
+	if _, _, err := p.ensureNetwork(ctx); err != nil {
+		return nil, err
 	}
 	
 	// Map engine to Aliyun engine
@@ -163,6 +171,10 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 	if p.kvstoreClient == nil {
 		return nil, fmt.Errorf("KVStore client not initialized")
 	}
+
+	if _, _, err := p.ensureNetwork(ctx); err != nil {
+		return nil, err
+	}
 	
 	// Check for existing instance (idempotency)
 	describeReq := r_kvstore.CreateDescribeInstancesRequest()
@@ -214,6 +226,10 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 func (p *Provider) ProvisionObjectStorage(ctx context.Context, spec providers.ObjectStorageSpec) (*providers.ObjectStorageOutput, error) {
 	if p.ossClient == nil {
 		return nil, fmt.Errorf("OSS client not initialized")
+	}
+
+	if _, _, err := p.ensureNetwork(ctx); err != nil {
+		return nil, err
 	}
 	
 	// Check if bucket exists (idempotency)
