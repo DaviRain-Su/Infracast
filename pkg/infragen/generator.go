@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/DaviRain-Su/infracast/internal/mapper"
+	"github.com/DaviRain-Su/infracast/internal/provisioner"
 	"github.com/DaviRain-Su/infracast/providers"
 )
 
@@ -22,8 +23,8 @@ func NewGenerator(base *InfraConfig) *Generator {
 	return &Generator{base: base}
 }
 
-// Generate generates infrastructure configuration from provisioning outputs and build metadata
-func (g *Generator) Generate(outputs []providers.ResourceOutput, meta mapper.BuildMeta) (*InfraConfig, error) {
+// Generate generates infrastructure configuration from provisioner results and build metadata (B1-R3)
+func (g *Generator) Generate(results []provisioner.ResourceResult, meta mapper.BuildMeta) (*InfraConfig, error) {
 	cfg := &InfraConfig{
 		SQLServers:    make(map[string]SQLServer),
 		Redis:         make(map[string]RedisServer),
@@ -35,18 +36,20 @@ func (g *Generator) Generate(outputs []providers.ResourceOutput, meta mapper.Bui
 		cfg = g.Merge(cfg, g.base)
 	}
 
-	// Build lookup map from outputs
-	outputMap := make(map[string]providers.ResourceOutput)
-	for _, out := range outputs {
-		key := fmt.Sprintf("%s:%s", out.Type, out.Name)
-		outputMap[key] = out
+	// Build lookup map from successful results only
+	resultMap := make(map[string]provisioner.ResourceResult)
+	for _, res := range results {
+		if res.Success {
+			key := fmt.Sprintf("%s:%s", res.Type, res.Name)
+			resultMap[key] = res
+		}
 	}
 
 	// Map databases from metadata
 	for _, dbName := range meta.Databases {
 		key := fmt.Sprintf("database:%s", dbName)
-		if output, exists := outputMap[key]; exists {
-			if dbOutput, ok := output.Output.(providers.DatabaseOutput); ok {
+		if result, exists := resultMap[key]; exists {
+			if dbOutput, ok := result.Output.(*providers.DatabaseOutput); ok {
 				cfg.SQLServers[dbName] = SQLServer{
 					Host:     dbOutput.Endpoint,
 					Port:     dbOutput.Port,
@@ -64,8 +67,8 @@ func (g *Generator) Generate(outputs []providers.ResourceOutput, meta mapper.Bui
 	// Map caches from metadata
 	for _, cacheName := range meta.Caches {
 		key := fmt.Sprintf("cache:%s", cacheName)
-		if output, exists := outputMap[key]; exists {
-			if cacheOutput, ok := output.Output.(providers.CacheOutput); ok {
+		if result, exists := resultMap[key]; exists {
+			if cacheOutput, ok := result.Output.(*providers.CacheOutput); ok {
 				cfg.Redis[cacheName] = RedisServer{
 					Host:      cacheOutput.Endpoint,
 					Port:      cacheOutput.Port,
@@ -84,8 +87,8 @@ func (g *Generator) Generate(outputs []providers.ResourceOutput, meta mapper.Bui
 	// Map object storage from metadata
 	for _, bucketName := range meta.ObjectStores {
 		key := fmt.Sprintf("object_storage:%s", bucketName)
-		if output, exists := outputMap[key]; exists {
-			if objOutput, ok := output.Output.(providers.ObjectStorageOutput); ok {
+		if result, exists := resultMap[key]; exists {
+			if objOutput, ok := result.Output.(*providers.ObjectStorageOutput); ok {
 				cfg.ObjectStorage[bucketName] = ObjectStore{
 					Type:      "S3",
 					Endpoint:  objOutput.Endpoint,

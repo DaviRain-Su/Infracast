@@ -43,12 +43,22 @@ type ProvisionInput struct {
 	Credentials credentials.CredentialConfig `json:"credentials"`
 }
 
+// ProvisionSummary provides aggregated counts of provisioning operations
+type ProvisionSummary struct {
+	Created int `json:"created"`
+	Updated int `json:"updated"`
+	Skipped int `json:"skipped"`
+	Failed  int `json:"failed"`
+	Total   int `json:"total"`
+}
+
 // ProvisionResult represents the result of the Provision operation
 type ProvisionResult struct {
 	Success   bool             `json:"success"`
 	Resources []ResourceResult `json:"resources"`
 	Plan      *PlanResult      `json:"plan,omitempty"`
 	Errors    []ProvisionError `json:"errors,omitempty"`
+	Summary   ProvisionSummary `json:"summary"`
 }
 
 // Provisioner orchestrates infrastructure provisioning
@@ -115,7 +125,7 @@ func (p *Provisioner) Provision(ctx context.Context, input ProvisionInput) (*Pro
 			return nil, &ProvisionError{
 				Code:      "EPROV001",
 				Message:   "failed to fetch credentials",
-				Retryable: true,
+				Retryable: false, // B1-R2: credential errors are not retryable
 				Cause:     err,
 			}
 		}
@@ -181,6 +191,9 @@ func (p *Provisioner) Provision(ctx context.Context, input ProvisionInput) (*Pro
 			})
 		}
 	}
+
+	// Calculate summary (B1-R1)
+	result.Summary = p.calculateSummary(applyResult.Resources)
 
 	return result, nil
 }
@@ -508,6 +521,36 @@ func (p *Provisioner) calculateDependencies(spec providers.ResourceSpec) []strin
 		// For now, return empty - dependencies are explicit in spec
 	}
 	return deps
+}
+
+// calculateSummary computes the summary counts from resource results (B1-R1)
+func (p *Provisioner) calculateSummary(resources []ResourceResult) ProvisionSummary {
+	summary := ProvisionSummary{
+		Total: len(resources),
+	}
+	for _, res := range resources {
+		switch res.Action {
+		case "create":
+			if res.Success {
+				summary.Created++
+			} else {
+				summary.Failed++
+			}
+		case "update":
+			if res.Success {
+				summary.Updated++
+			} else {
+				summary.Failed++
+			}
+		case "noop":
+			summary.Skipped++
+		case "delete":
+			if !res.Success {
+				summary.Failed++
+			}
+		}
+	}
+	return summary
 }
 
 // getResourceName extracts the resource name from a spec

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DaviRain-Su/infracast/internal/mapper"
+	"github.com/DaviRain-Su/infracast/internal/provisioner"
 	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ func TestGenerator_NewGenerator(t *testing.T) {
 	assert.NotNil(t, g.base)
 }
 
-// TestGenerator_Generate validates config generation
+// TestGenerator_Generate validates config generation (B1-R3)
 func TestGenerator_Generate(t *testing.T) {
 	g := NewGenerator(nil)
 	require.NotNil(t, g)
@@ -37,12 +38,14 @@ func TestGenerator_Generate(t *testing.T) {
 		ObjectStores: []string{"assets"},
 	}
 
-	outputs := []providers.ResourceOutput{
+	// Use ResourceResult instead of ResourceOutput (B1-R3)
+	results := []provisioner.ResourceResult{
 		{
-			Type:       "database",
-			Name:       "users",
-			ResourceID: "r-123",
-			Output: providers.DatabaseOutput{
+			Name:    "users",
+			Type:    "database",
+			Action:  "create",
+			Success: true,
+			Output: &providers.DatabaseOutput{
 				ResourceID: "r-123",
 				Endpoint:   "pg-xxx.pg.rds.aliyuncs.com",
 				Port:       5432,
@@ -51,10 +54,11 @@ func TestGenerator_Generate(t *testing.T) {
 			},
 		},
 		{
-			Type:       "cache",
-			Name:       "session",
-			ResourceID: "r-456",
-			Output: providers.CacheOutput{
+			Name:    "session",
+			Type:    "cache",
+			Action:  "create",
+			Success: true,
+			Output: &providers.CacheOutput{
 				ResourceID: "r-456",
 				Endpoint:   "r-xxx.redis.rds.aliyuncs.com",
 				Port:       6379,
@@ -62,10 +66,11 @@ func TestGenerator_Generate(t *testing.T) {
 			},
 		},
 		{
-			Type:       "object_storage",
-			Name:       "assets",
-			ResourceID: "bucket-789",
-			Output: providers.ObjectStorageOutput{
+			Name:    "assets",
+			Type:    "object_storage",
+			Action:  "create",
+			Success: true,
+			Output: &providers.ObjectStorageOutput{
 				ResourceID: "bucket-789",
 				BucketName: "myapp-assets",
 				Endpoint:   "https://oss-cn-hangzhou.aliyuncs.com",
@@ -74,7 +79,7 @@ func TestGenerator_Generate(t *testing.T) {
 		},
 	}
 
-	cfg, err := g.Generate(outputs, meta)
+	cfg, err := g.Generate(results, meta)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
 
@@ -99,7 +104,7 @@ func TestGenerator_Generate(t *testing.T) {
 	assert.Equal(t, "${OSS_ACCESS_KEY_ID}", cfg.ObjectStorage["assets"].AccessKey)
 }
 
-// TestGenerator_Generate_WithBase validates generation with base config
+// TestGenerator_Generate_WithBase validates generation with base config (B1-R3)
 func TestGenerator_Generate_WithBase(t *testing.T) {
 	base := &InfraConfig{
 		SQLServers: map[string]SQLServer{
@@ -120,12 +125,14 @@ func TestGenerator_Generate_WithBase(t *testing.T) {
 		Databases: []string{"users"},
 	}
 
-	outputs := []providers.ResourceOutput{
+	// Use ResourceResult instead of ResourceOutput (B1-R3)
+	results := []provisioner.ResourceResult{
 		{
-			Type:       "database",
-			Name:       "users",
-			ResourceID: "r-123",
-			Output: providers.DatabaseOutput{
+			Name:    "users",
+			Type:    "database",
+			Action:  "create",
+			Success: true,
+			Output: &providers.DatabaseOutput{
 				ResourceID: "r-123",
 				Endpoint:   "pg-xxx.pg.rds.aliyuncs.com",
 				Port:       5432,
@@ -135,7 +142,7 @@ func TestGenerator_Generate_WithBase(t *testing.T) {
 		},
 	}
 
-	cfg, err := g.Generate(outputs, meta)
+	cfg, err := g.Generate(results, meta)
 	require.NoError(t, err)
 
 	// Should have both legacy and new database
@@ -443,4 +450,241 @@ func TestInfraConfig_StructFields(t *testing.T) {
 	assert.Equal(t, "alicloud", store.Provider)
 	assert.Equal(t, "${ACCESS_KEY_ID}", store.AccessKey)
 	assert.Equal(t, "${ACCESS_KEY_SECRET}", store.SecretKey)
+}
+
+
+// TestGenerator_FromProvisionResults validates generation from ResourceResult (B1-R3)
+func TestGenerator_FromProvisionResults(t *testing.T) {
+	g := NewGenerator(nil)
+	require.NotNil(t, g)
+
+	meta := mapper.BuildMeta{
+		AppName:      "myapp",
+		Services:     []string{"api"},
+		Databases:    []string{"users"},
+		Caches:       []string{"session"},
+		ObjectStores: []string{"assets"},
+	}
+
+	// Real provision outputs (simulating actual provision results)
+	results := []provisioner.ResourceResult{
+		{
+			Name:    "users",
+			Type:    "database",
+			Action:  "create",
+			Success: true,
+			Output: &providers.DatabaseOutput{
+				ResourceID: "r-123",
+				Endpoint:   "pg-xxx.pg.rds.aliyuncs.com",
+				Port:       5432,
+				Username:   "app",
+				Password:   "${USERS_DB_PASSWORD}",
+			},
+		},
+		{
+			Name:    "session",
+			Type:    "cache",
+			Action:  "create",
+			Success: true,
+			Output: &providers.CacheOutput{
+				ResourceID: "r-456",
+				Endpoint:   "r-xxx.redis.rds.aliyuncs.com",
+				Port:       6379,
+				Password:   "${SESSION_REDIS_PASSWORD}",
+			},
+		},
+		{
+			Name:    "assets",
+			Type:    "object_storage",
+			Action:  "create",
+			Success: true,
+			Output: &providers.ObjectStorageOutput{
+				ResourceID: "bucket-789",
+				BucketName: "myapp-assets",
+				Endpoint:   "https://oss-cn-hangzhou.aliyuncs.com",
+				Region:     "cn-hangzhou",
+			},
+		},
+	}
+
+	cfg, err := g.Generate(results, meta)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// Verify infracfg contains real provisioned endpoints (not hardcoded)
+	assert.Equal(t, "pg-xxx.pg.rds.aliyuncs.com", cfg.SQLServers["users"].Host)
+	assert.Equal(t, 5432, cfg.SQLServers["users"].Port)
+	assert.Equal(t, "r-xxx.redis.rds.aliyuncs.com", cfg.Redis["session"].Host)
+	assert.Equal(t, 6379, cfg.Redis["session"].Port)
+	assert.Equal(t, "https://oss-cn-hangzhou.aliyuncs.com", cfg.ObjectStorage["assets"].Endpoint)
+}
+
+// TestGenerator_NoHardcodedValues validates no hardcoded localhost values (B1-R3)
+func TestGenerator_NoHardcodedValues(t *testing.T) {
+	g := NewGenerator(nil)
+	require.NotNil(t, g)
+
+	meta := mapper.BuildMeta{
+		AppName:   "myapp",
+		Databases: []string{"users"},
+		Caches:    []string{"session"},
+	}
+
+	// Results with real cloud endpoints
+	results := []provisioner.ResourceResult{
+		{
+			Name:    "users",
+			Type:    "database",
+			Action:  "create",
+			Success: true,
+			Output: &providers.DatabaseOutput{
+				Endpoint: "pg-xxx.pg.rds.aliyuncs.com",
+				Port:     5432,
+			},
+		},
+		{
+			Name:    "session",
+			Type:    "cache",
+			Action:  "create",
+			Success: true,
+			Output: &providers.CacheOutput{
+				Endpoint: "r-xxx.redis.rds.aliyuncs.com",
+				Port:     6379,
+			},
+		},
+	}
+
+	cfg, err := g.Generate(results, meta)
+	require.NoError(t, err)
+
+	// Verify no hardcoded localhost values
+	for name, server := range cfg.SQLServers {
+		assert.NotContains(t, server.Host, "localhost", "database %s should not use localhost", name)
+		assert.NotContains(t, server.Host, "127.0.0.1", "database %s should not use 127.0.0.1", name)
+	}
+
+	for name, redis := range cfg.Redis {
+		assert.NotContains(t, redis.Host, "localhost", "cache %s should not use localhost", name)
+		assert.NotContains(t, redis.Host, "127.0.0.1", "cache %s should not use 127.0.0.1", name)
+	}
+}
+
+// TestGenerator_SkipsFailedResults validates failed results are skipped (B1-R3)
+func TestGenerator_SkipsFailedResults(t *testing.T) {
+	g := NewGenerator(nil)
+	require.NotNil(t, g)
+
+	meta := mapper.BuildMeta{
+		AppName:   "myapp",
+		Databases: []string{"users", "failed_db"},
+	}
+
+	results := []provisioner.ResourceResult{
+		{
+			Name:    "users",
+			Type:    "database",
+			Action:  "create",
+			Success: true,
+			Output: &providers.DatabaseOutput{
+				Endpoint: "pg-users.pg.rds.aliyuncs.com",
+				Port:     5432,
+			},
+		},
+		{
+			Name:     "failed_db",
+			Type:     "database",
+			Action:   "create",
+			Success:  false,
+			ErrorMsg: "insufficient quota",
+			// No Output - failed provision
+		},
+	}
+
+	cfg, err := g.Generate(results, meta)
+	require.NoError(t, err)
+
+	// Should have successful resource
+	assert.NotNil(t, cfg.SQLServers["users"])
+	assert.Equal(t, "pg-users.pg.rds.aliyuncs.com", cfg.SQLServers["users"].Host)
+
+	// Should NOT have failed resource
+	assert.Empty(t, cfg.SQLServers["failed_db"].Host)
+}
+
+// TestGenerator_CacheAndStorageResults validates cache and storage generation (B1-R3)
+func TestGenerator_CacheAndStorageResults(t *testing.T) {
+	g := NewGenerator(nil)
+	require.NotNil(t, g)
+
+	meta := mapper.BuildMeta{
+		AppName:      "myapp",
+		Caches:       []string{"session", "cache2"},
+		ObjectStores: []string{"uploads", "backups"},
+	}
+
+	results := []provisioner.ResourceResult{
+		{
+			Name:    "session",
+			Type:    "cache",
+			Action:  "create",
+			Success: true,
+			Output: &providers.CacheOutput{
+				Endpoint: "r-session.redis.rds.aliyuncs.com",
+				Port:     6379,
+				Password: "${SESSION_PWD}",
+			},
+		},
+		{
+			Name:    "cache2",
+			Type:    "cache",
+			Action:  "create",
+			Success: true,
+			Output: &providers.CacheOutput{
+				Endpoint: "r-cache2.redis.rds.aliyuncs.com",
+				Port:     6380,
+			},
+		},
+		{
+			Name:    "uploads",
+			Type:    "object_storage",
+			Action:  "create",
+			Success: true,
+			Output: &providers.ObjectStorageOutput{
+				BucketName: "myapp-uploads",
+				Endpoint:   "https://oss-cn-hangzhou.aliyuncs.com",
+				Region:     "cn-hangzhou",
+			},
+		},
+		{
+			Name:    "backups",
+			Type:    "object_storage",
+			Action:  "create",
+			Success: true,
+			Output: &providers.ObjectStorageOutput{
+				BucketName: "myapp-backups",
+				Endpoint:   "https://oss-cn-beijing.aliyuncs.com",
+				Region:     "cn-beijing",
+			},
+		},
+	}
+
+	cfg, err := g.Generate(results, meta)
+	require.NoError(t, err)
+
+	// Verify all caches
+	assert.Equal(t, "r-session.redis.rds.aliyuncs.com", cfg.Redis["session"].Host)
+	assert.Equal(t, 6379, cfg.Redis["session"].Port)
+	assert.Equal(t, "${SESSION_PWD}", cfg.Redis["session"].Password)
+	assert.NotNil(t, cfg.Redis["session"].Auth)
+	assert.True(t, cfg.Redis["session"].Auth.Enabled)
+
+	assert.Equal(t, "r-cache2.redis.rds.aliyuncs.com", cfg.Redis["cache2"].Host)
+	assert.Equal(t, 6380, cfg.Redis["cache2"].Port)
+
+	// Verify all object storage
+	assert.Equal(t, "myapp-uploads", cfg.ObjectStorage["uploads"].Bucket)
+	assert.Equal(t, "cn-hangzhou", cfg.ObjectStorage["uploads"].Region)
+
+	assert.Equal(t, "myapp-backups", cfg.ObjectStorage["backups"].Bucket)
+	assert.Equal(t, "cn-beijing", cfg.ObjectStorage["backups"].Region)
 }
