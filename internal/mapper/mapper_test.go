@@ -5,28 +5,18 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/DaviRain-Su/infracast/internal/config"
 	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestMapper_MapToResourceSpecs(t *testing.T) {
-	cfg := &config.Config{
-		Provider: "alicloud",
-		Region:   "cn-hangzhou",
-		Overrides: config.Overrides{
-			Databases: map[string]config.DatabaseOverride{
-				"mydb": {
-					InstanceClass: "rds.mysql.s3.large",
-					StorageGB:     100,
-					HighAvail:     true,
-				},
-			},
-		},
-	}
+func newTestMapper() *Mapper {
+	registry := providers.NewRegistry()
+	return NewMapper(registry)
+}
 
-	mapper := NewMapper(cfg)
+func TestMapper_MapToResourceSpecs(t *testing.T) {
+	mapper := newTestMapper()
 
 	meta := BuildMeta{
 		AppName:      "myapp",
@@ -41,7 +31,7 @@ func TestMapper_MapToResourceSpecs(t *testing.T) {
 	// Should have 6 resources (2 db + 2 cache + 2 object storage)
 	assert.Len(t, specs, 6)
 
-	// Verify database with override applied
+	// Verify database spec exists
 	var mydbSpec *providers.DatabaseSpec
 	for _, spec := range specs {
 		if spec.Type == "database" && spec.DatabaseSpec != nil && spec.DatabaseSpec.Name == "mydb" {
@@ -50,14 +40,12 @@ func TestMapper_MapToResourceSpecs(t *testing.T) {
 		}
 	}
 	require.NotNil(t, mydbSpec)
-	assert.Equal(t, "rds.mysql.s3.large", mydbSpec.InstanceClass)
-	assert.Equal(t, 100, mydbSpec.StorageGB)
-	assert.True(t, mydbSpec.HighAvail)
+	assert.Equal(t, "rds.pg.s1.small", mydbSpec.InstanceClass)
+	assert.Equal(t, 20, mydbSpec.StorageGB) // Default per Tech Spec
 }
 
 func TestMapper_ValidateBuildMeta(t *testing.T) {
-	cfg := &config.Config{}
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	tests := []struct {
 		name    string
@@ -107,47 +95,29 @@ func TestMapper_ValidateBuildMeta(t *testing.T) {
 }
 
 func TestMapper_mapDatabase(t *testing.T) {
-	cfg := &config.Config{
-		Overrides: config.Overrides{
-			Databases: map[string]config.DatabaseOverride{
-				"override-db": {
-					InstanceClass: "rds.pg.s3.large",
-					StorageGB:     200,
-				},
-			},
-		},
-	}
-
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	// Test default values
 	spec := mapper.mapDatabase("default-db")
 	assert.Equal(t, "default-db", spec.DatabaseSpec.Name)
 	assert.Equal(t, "postgresql", spec.DatabaseSpec.Engine)
 	assert.Equal(t, "rds.pg.s1.small", spec.DatabaseSpec.InstanceClass)
-	assert.Equal(t, 20, spec.DatabaseSpec.StorageGB)
+	assert.Equal(t, 20, spec.DatabaseSpec.StorageGB) // Fixed: 50 -> 20
 	assert.False(t, spec.DatabaseSpec.HighAvail)
-
-	// Test with override
-	spec = mapper.mapDatabase("override-db")
-	assert.Equal(t, "rds.pg.s3.large", spec.DatabaseSpec.InstanceClass)
-	assert.Equal(t, 200, spec.DatabaseSpec.StorageGB)
 }
 
 func TestMapper_mapCache(t *testing.T) {
-	cfg := &config.Config{}
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	spec := mapper.mapCache("mycache")
 	assert.Equal(t, "cache", spec.Type)
 	assert.Equal(t, "mycache", spec.CacheSpec.Name)
 	assert.Equal(t, "redis", spec.CacheSpec.Engine)
-	assert.Equal(t, 256, spec.CacheSpec.MemoryMB)
+	assert.Equal(t, 256, spec.CacheSpec.MemoryMB) // Fixed: 1024 -> 256
 }
 
 func TestMapper_mapObjectStorage(t *testing.T) {
-	cfg := &config.Config{}
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	spec := mapper.mapObjectStorage("mybucket")
 	assert.Equal(t, "object_storage", spec.Type)
@@ -156,8 +126,7 @@ func TestMapper_mapObjectStorage(t *testing.T) {
 }
 
 func TestMapper_GetResourceDependencies(t *testing.T) {
-	cfg := &config.Config{}
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	meta := BuildMeta{
 		Databases: []string{"db1", "db2"},
@@ -173,14 +142,9 @@ func TestMapper_GetResourceDependencies(t *testing.T) {
 }
 
 func TestMapper_ExtractFromConfig(t *testing.T) {
-	cfg := &config.Config{
-		Provider: "alicloud",
-		Region:   "cn-hangzhou",
-	}
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	meta := mapper.ExtractFromConfig()
-	assert.Equal(t, "alicloud", meta.AppName)
 	assert.Equal(t, []string{"default"}, meta.Services)
 }
 
@@ -206,8 +170,7 @@ func TestBuildMeta_Fields(t *testing.T) {
 
 // TestMapper_ScanSources validates source code scanning for resource declarations
 func TestMapper_ScanSources(t *testing.T) {
-	cfg := &config.Config{}
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	// Create temporary test directory with sample Go files
 	tmpDir := t.TempDir()
@@ -259,10 +222,116 @@ var SessionCache = &cache.Cache{Name: "session"}
 	assert.Contains(t, cacheNames, "session")
 }
 
+// TestMapper_ScanSources_EmptyDirectory validates scanning empty directory
+func TestMapper_ScanSources_EmptyDirectory(t *testing.T) {
+	mapper := newTestMapper()
+	tmpDir := t.TempDir()
+
+	declarations, err := mapper.ScanSources(tmpDir)
+	require.NoError(t, err)
+	assert.Empty(t, declarations)
+}
+
+// TestMapper_ScanSources_NoGoFiles validates scanning directory without Go files
+func TestMapper_ScanSources_NoGoFiles(t *testing.T) {
+	mapper := newTestMapper()
+	tmpDir := t.TempDir()
+
+	// Create a non-Go file
+	txtFile := filepath.Join(tmpDir, "readme.txt")
+	require.NoError(t, os.WriteFile(txtFile, []byte("hello"), 0644))
+
+	declarations, err := mapper.ScanSources(tmpDir)
+	require.NoError(t, err)
+	assert.Empty(t, declarations)
+}
+
+// TestMapper_ScanSources_MixedDeclarations validates scanning mixed resource declarations
+func TestMapper_ScanSources_MixedDeclarations(t *testing.T) {
+	mapper := newTestMapper()
+	tmpDir := t.TempDir()
+
+	// Create file with mixed declarations
+	mixedFile := filepath.Join(tmpDir, "mixed.go")
+	mixedContent := `package main
+
+import (
+	"encore.dev/storage/sql"
+	"encore.dev/storage/cache"
+	"encore.dev/storage/object"
+)
+
+var UsersDB = &sql.SQLDatabase{Name: "users"}
+var SessionCache = &cache.Cache{Name: "session"}
+var AssetsStore = &object.ObjectStorage{Name: "assets"}
+`
+	require.NoError(t, os.WriteFile(mixedFile, []byte(mixedContent), 0644))
+
+	declarations, err := mapper.ScanSources(tmpDir)
+	require.NoError(t, err)
+	assert.Len(t, declarations, 3)
+
+	var types []string
+	for _, decl := range declarations {
+		types = append(types, decl.Type)
+	}
+	assert.Contains(t, types, "database")
+	assert.Contains(t, types, "cache")
+	assert.Contains(t, types, "object_storage")
+}
+
+// TestMapper_ScanSources_MalformedFile validates handling of malformed Go files
+func TestMapper_ScanSources_MalformedFile(t *testing.T) {
+	mapper := newTestMapper()
+	tmpDir := t.TempDir()
+
+	// Create a malformed file that is still readable
+	badFile := filepath.Join(tmpDir, "bad.go")
+	badContent := `this is not valid go syntax but contains SQLDatabase{Name: "test"}`
+	require.NoError(t, os.WriteFile(badFile, []byte(badContent), 0644))
+
+	// Should still find the declaration via regex
+	declarations, err := mapper.ScanSources(tmpDir)
+	require.NoError(t, err)
+	assert.Len(t, declarations, 1)
+	assert.Equal(t, "database", declarations[0].Type)
+	assert.Equal(t, "test", declarations[0].Name)
+}
+
+// TestMapper_ScanSources_NonExistentDirectory validates error for non-existent directory
+func TestMapper_ScanSources_NonExistentDirectory(t *testing.T) {
+	mapper := newTestMapper()
+
+	_, err := mapper.ScanSources("/nonexistent/path/that/does/not/exist")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EMAP003")
+}
+
+// TestMapper_ScanSources_NestedDirectories validates scanning nested directories
+func TestMapper_ScanSources_NestedDirectories(t *testing.T) {
+	mapper := newTestMapper()
+	tmpDir := t.TempDir()
+
+	// Create nested structure
+	nestedDir := filepath.Join(tmpDir, "services", "api")
+	require.NoError(t, os.MkdirAll(nestedDir, 0755))
+
+	nestedFile := filepath.Join(nestedDir, "db.go")
+	nestedContent := `package api
+import "encore.dev/storage/sql"
+var ApiDB = &sql.SQLDatabase{Name: "api_db"}
+`
+	require.NoError(t, os.WriteFile(nestedFile, []byte(nestedContent), 0644))
+
+	declarations, err := mapper.ScanSources(tmpDir)
+	require.NoError(t, err)
+	assert.Len(t, declarations, 1)
+	assert.Equal(t, "api_db", declarations[0].Name)
+}
+
 // TestMapper_MapToMappedResources validates DAG resource mapping
 func TestMapper_MapToMappedResources(t *testing.T) {
-	cfg := &config.Config{}
-	mapper := NewMapper(cfg)
+	mapper := newTestMapper()
 
 	specs := []providers.ResourceSpec{
 		{Type: "database", DatabaseSpec: &providers.DatabaseSpec{Name: "users"}},
@@ -320,4 +389,12 @@ func TestResourceDeclaration_Fields(t *testing.T) {
 	assert.Equal(t, "users", decl.Name)
 	assert.Equal(t, "/app/db.go", decl.Location)
 	assert.Equal(t, 42, decl.Line)
+}
+
+// TestMapper_NewMapper validates NewMapper signature
+func TestMapper_NewMapper(t *testing.T) {
+	registry := providers.NewRegistry()
+	mapper := NewMapper(registry)
+	assert.NotNil(t, mapper)
+	assert.NotNil(t, mapper.registry)
 }

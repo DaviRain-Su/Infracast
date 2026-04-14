@@ -9,10 +9,10 @@ import (
 
 // Credential represents cloud provider credentials
 type Credential struct {
-	Provider   string
-	AccessKey  string
-	SecretKey  string
-	Region     string
+	Provider         string
+	AccessKeyID      string
+	AccessKeySecret  string
+	Region           string
 	// STS credentials (optional, preferred for production)
 	STS *STSCredential
 }
@@ -22,9 +22,9 @@ type STSCredential struct {
 	RoleARN         string
 	SessionName     string
 	AccessKeyID     string
-	SecretAccessKey string
+	AccessKeySecret string
 	SessionToken    string
-	Expiration      int64 // Unix timestamp
+	Expiration      time.Time
 }
 
 // CredentialConfig provides configuration for credential retrieval
@@ -61,8 +61,8 @@ func (m *Manager) Store(provider, accessKey, secretKey, region string) error {
 
 	m.credentials[provider] = Credential{
 		Provider:  provider,
-		AccessKey: accessKey,
-		SecretKey: secretKey,
+		AccessKeyID: accessKey,
+		AccessKeySecret: secretKey,
 		Region:    region,
 	}
 	return nil
@@ -182,8 +182,7 @@ func (m *Manager) GetCredentials(config CredentialConfig) (*Credential, error) {
 			refreshWindow = 5 * time.Minute // Default: refresh 5 min before expiration
 		}
 
-		expiration := time.Unix(cred.STS.Expiration, 0)
-		if time.Until(expiration) < refreshWindow {
+		if time.Until(cred.STS.Expiration) < refreshWindow {
 			// STS credentials need refresh - return error to trigger refresh flow
 			return nil, fmt.Errorf("ECRED018: STS credentials expired or expiring soon for provider: %s", config.Provider)
 		}

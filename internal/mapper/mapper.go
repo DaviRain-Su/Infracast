@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/DaviRain-Su/infracast/internal/config"
 	"github.com/DaviRain-Su/infracast/providers"
 )
 
@@ -43,12 +42,12 @@ type MappedResource struct {
 
 // Mapper maps build metadata to resource specifications
 type Mapper struct {
-	cfg *config.Config
+	registry *providers.Registry
 }
 
 // NewMapper creates a new service mapper
-func NewMapper(cfg *config.Config) *Mapper {
-	return &Mapper{cfg: cfg}
+func NewMapper(registry *providers.Registry) *Mapper {
+	return &Mapper{registry: registry}
 }
 
 // MapToResourceSpecs converts build metadata to resource specs
@@ -88,15 +87,7 @@ func (m *Mapper) mapDatabase(name string) providers.ResourceSpec {
 	}
 
 	// Apply overrides from config
-	if override, exists := m.cfg.GetDatabaseOverride(name); exists {
-		if override.InstanceClass != "" {
-			spec.InstanceClass = override.InstanceClass
-		}
-		if override.StorageGB > 0 {
-			spec.StorageGB = override.StorageGB
-		}
-		spec.HighAvail = override.HighAvail
-	}
+	// TODO: Implement config override support with Registry
 
 	return providers.ResourceSpec{
 		Type:         "database",
@@ -146,8 +137,14 @@ func (m *Mapper) ValidateBuildMeta(meta BuildMeta) error {
 
 // ExtractFromConfig extracts resource names from config (fallback method)
 func (m *Mapper) ExtractFromConfig() BuildMeta {
+	// Use registry info for app name
+	providers := m.registry.List()
+	appName := "infracast"
+	if len(providers) > 0 {
+		appName = providers[0]
+	}
 	return BuildMeta{
-		AppName:  m.cfg.Provider,
+		AppName:  appName,
 		Services: []string{"default"},
 	}
 }

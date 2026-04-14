@@ -22,9 +22,9 @@ func (m *MockSTSClient) AssumeRole(ctx context.Context, roleARN, sessionName str
 		RoleARN:         roleARN,
 		SessionName:     sessionName,
 		AccessKeyID:     "new-access-key",
-		SecretAccessKey: "new-secret-key",
+		AccessKeySecret: "new-secret-key",
 		SessionToken:    "new-session-token",
-		Expiration:      3600,
+		Expiration:      time.Now().Add(time.Hour),
 	}, nil
 }
 
@@ -96,7 +96,7 @@ func TestManager_StoreWithSTS(t *testing.T) {
 		RoleARN:         "acs:ram::123456789012:role/MyRole",
 		SessionName:     "session-1",
 		AccessKeyID:     "STS123",
-		SecretAccessKey: "STS456",
+		AccessKeySecret: "STS456",
 		SessionToken:    "token789",
 	}
 
@@ -121,8 +121,8 @@ func TestManager_Get(t *testing.T) {
 	// Get existing
 	cred, err := m.Get("alicloud")
 	require.NoError(t, err)
-	assert.Equal(t, "AK123", cred.AccessKey)
-	assert.Equal(t, "SK456", cred.SecretKey)
+	assert.Equal(t, "AK123", cred.AccessKeyID)
+	assert.Equal(t, "SK456", cred.AccessKeySecret)
 
 	// Get non-existent
 	_, err = m.Get("unknown")
@@ -254,7 +254,7 @@ func TestManager_GetCredentials(t *testing.T) {
 	cred, err := m.GetCredentials(config)
 	require.NoError(t, err)
 	assert.Equal(t, "alicloud", cred.Provider)
-	assert.Equal(t, "AK123456", cred.AccessKey)
+	assert.Equal(t, "AK123456", cred.AccessKeyID)
 	assert.Equal(t, "cn-hangzhou", cred.Region)
 }
 
@@ -295,7 +295,7 @@ func TestManager_GetCredentialsSTSExpiration(t *testing.T) {
 	sts := STSCredential{
 		RoleARN:    "arn:aws:iam::123:role/test",
 		AccessKeyID: "STS123",
-		Expiration: time.Now().Add(-1 * time.Hour).Unix(), // Expired 1 hour ago
+		Expiration: time.Now().Add(-1 * time.Hour), // Expired 1 hour ago
 	}
 	m.StoreWithSTS("alicloud", sts, "cn-hangzhou")
 
@@ -315,7 +315,7 @@ func TestManager_GetCredentialsSTSValid(t *testing.T) {
 	sts := STSCredential{
 		RoleARN:     "arn:aws:iam::123:role/test",
 		AccessKeyID: "STS123",
-		Expiration:  time.Now().Add(1 * time.Hour).Unix(), // Valid for 1 more hour
+		Expiration: time.Now().Add(1 * time.Hour), // Valid for 1 more hour
 	}
 	m.StoreWithSTS("alicloud", sts, "cn-hangzhou")
 
