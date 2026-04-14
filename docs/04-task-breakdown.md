@@ -1,8 +1,10 @@
 # Infracast — Task Breakdown
 
-> **Version** 1.2 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner)
+> **Version** 1.3 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner)
 > **Phase**: dev-lifecycle Phase 4 (承接 Technical Spec v1.1 Frozen)
 > **Input**: PRD v1.1, Architecture v1.1, Technical Spec v1.1 (all Frozen)
+>
+> **v1.3 变更说明**: Milestone C 完成闭环。TC01-TC08 全部通过技术审查，代码已合并到 main 分支。
 >
 > **v1.2 变更说明**: 经 @davirain 确认（2026-04-15），里程碑执行顺序调整为 A → B-CLI → B-Provider → C → D → E。原 Milestone B（TB01-TB06 Alicloud Provider Adapter）顺延，新增 B-CLI 阶段（B2.1-B2.4 CLI Framework）优先执行。原因：CLI 为低风险、无外部依赖的用户入口层，可与后续 Provider Adapter 并行准备。
 
@@ -295,104 +297,112 @@
 
 > **Goal**: 2 个示例 app + 1 条迁移变更可复现上线
 
-### TC01: Deploy Pipeline — Step 1 Build (encore build)
+### TC01: Deploy Pipeline — Step 1 Build (encore build) ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 3h |
 | Dependencies | TA04 |
+| Status | **Done** — Commit `56d8c0a` |
 | Spec Reference | Tech Spec §7.3 Step 1 |
 | Deliverables | `internal/deploy/build.go`, `build_test.go` |
 | Acceptance | 1. Execute `encore build docker <tag>`. 2. Parse output for image tag. 3. Extract BuildMeta. 4. Timeout 5 min. 5. EDEPLOY001 on failure. |
 
-### TC02: Deploy Pipeline — Step 5 Deploy (ACR + K8s)
+### TC02: Deploy Pipeline — Step 5 Deploy (ACR + K8s) ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 4h |
 | Dependencies | TB05 |
+| Status | **Done** — Commit `5c516c1` + fix `fa1b3e3` |
 | Spec Reference | Tech Spec §7.3 Step 5 |
 | Deliverables | `internal/deploy/docker.go`, `internal/deploy/k8s.go` |
 | Acceptance | 1. Push image to ACR (with retry 3x). 2. Generate K8s Deployment + Service YAML (matching Tech Spec template). 3. Create ConfigMap from infracfg.json. 4. Apply to ACK Serverless namespace. 5. Labels include `infracast.dev/env` and `infracast.dev/commit`. |
 
-### TC03: Deploy Pipeline — Step 6 Verify (Health Check)
+### TC03: Deploy Pipeline — Step 6 Verify (Health Check) ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 2h |
 | Dependencies | TC02 |
+| Status | **Done** — Commit `3bf85ba` + fix `fa1b3e3` |
 | Spec Reference | Tech Spec §7.3 Step 6 |
 | Deliverables | `internal/deploy/health.go`, `health_test.go` |
 | Acceptance | 1. Poll K8s Deployment status every 10s. 2. Timeout 5 min. 3. On timeout: `kubectl rollout undo`. 4. EDEPLOY050 on failure. |
 
-### TC04: Deploy Pipeline — Rollback
+### TC04: Deploy Pipeline — Rollback ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 2h |
 | Dependencies | TC03 |
+| Status | **Done** — Commit `8ec746d` |
 | Spec Reference | Tech Spec §7.4 + §7.5 |
 | Deliverables | `internal/deploy/rollback.go`, `rollback_test.go` |
 | Acceptance | 1. K8s rollout undo on verify failure. 2. Forward-only: never execute destructive DDL. 3. Rollback itself fails → status "failed" (not "rolled_back"). 4. First deploy with no previous revision → status "failed". |
 
-### TC05: Deploy Pipeline — Full Orchestrator
+### TC05: Deploy Pipeline — Full Orchestrator ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 4h |
 | Dependencies | TC01-TC04, TA09 |
+| Status | **Done** — Commit `b30282a` |
 | Spec Reference | Tech Spec §7.1, §7.2 |
 | Deliverables | `internal/deploy/pipeline.go` |
 | Acceptance | 1. `Pipeline.Execute(ctx, input)` runs all 7 steps. 2. Step results tracked. 3. Context cancellation (Ctrl+C) handled gracefully. 4. Exit codes per Tech Spec §9.3. 5. `--verbose` logs each step. |
 
-### TC06: `infracast run` — Local Development
+### TC06: `infracast run` — Local Development ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 3h |
 | Dependencies | TA05 |
+| Status | **Done** — Commit `56d8c0a` + fix `2aff5d1` |
 | Deliverables | Updated `cmd/infracast/internal/commands/run.go` |
 | Acceptance | 1. `infracast run` starts local Encore dev environment. 2. Generates local infracfg.json pointing to localhost DB/Redis. 3. Env vars match cloud deploy (INFRACFG_PATH). |
 
-### TC07: Notification (Feishu + DingTalk)
+### TC07: Notification (Feishu + DingTalk) ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 2h |
 | Dependencies | TC05 |
+| Status | **Done** — Commit `41406bd` |
 | Spec Reference | Tech Spec §7.3 Step 7 |
 | Deliverables | `internal/notify/notifier.go`, `feishu.go`, `dingtalk.go`, `notify_test.go` |
 | Acceptance | 1. Feishu webhook POST. 2. DingTalk webhook POST. 3. Non-blocking (10s timeout, failure logged only). 4. Empty notification config → skip. |
 
-### TC08: Example Apps (2 apps + 1 migration)
+### TC08: Example Apps (2 apps + 1 migration) ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 4h |
 | Dependencies | TC05 |
+| Status | **Done** — Commit `284ae7c` + fix `0e03766` |
 | Deliverables | `examples/hello-world/`, `examples/todo-app/` |
 | Acceptance | 1. hello-world: 1 service, 0 resources. Deploys to ACK Serverless. 2. todo-app: 1 service + 1 PostgreSQL + 1 Redis. Deploys with full provisioning. 3. todo-app has migration_001.sql. Deploy v2 with migration_002.sql succeeds (forward-only). |
 
 ### Milestone C Summary
 
-| Task | Est. | Dependencies |
-|------|------|-------------|
-| TC01 | 3h | TA04 |
-| TC02 | 4h | TB05 |
-| TC03 | 2h | TC02 |
-| TC04 | 2h | TC03 |
-| TC05 | 4h | TC01-04, TA09 |
-| TC06 | 3h | TA05 |
-| TC07 | 2h | TC05 |
-| TC08 | 4h | TC05 |
+| Task | Est. | Dependencies | Status |
+|------|------|-------------|--------|
+| TC01 | 3h | TA04 | ✅ Done |
+| TC02 | 4h | TB05 | ✅ Done |
+| TC03 | 2h | TC02 | ✅ Done |
+| TC04 | 2h | TC03 | ✅ Done |
+| TC05 | 4h | TC01-04, TA09 | ✅ Done |
+| TC06 | 3h | TA05 | ✅ Done |
+| TC07 | 2h | TC05 | ✅ Done |
+| TC08 | 4h | TC05 | ✅ Done |
 
 **Total estimate**: 24h (≈ 3 working days, fits Week 7-10)
 
@@ -551,7 +561,7 @@ TA01 ✅
 |-----------|-------|-------|-------------------|
 | A | 9 (9 done) | 28h | Week 1-2 |
 | B | 10 (10 done) | 30h | Week 3-6 |
-| C | 8 | 24h | Week 7-10 |
+| C | 8 (8 done) | 24h | Week 7-10 |
 | D | 4 | 11h | Week 11-14 |
 | E | 3 | 9h | Week 15-16 |
 | **Total** | **30** | **92h** | **16 weeks** |
