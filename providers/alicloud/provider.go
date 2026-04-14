@@ -8,16 +8,18 @@ import (
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/auth/credentials"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/r-kvstore"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/rds"
 	"github.com/DaviRain-Su/infracast/providers"
 )
 
 // Provider implements CloudProviderInterface for Aliyun Cloud
 type Provider struct {
-	region      string
-	accessKeyID string
+	region          string
+	accessKeyID     string
 	accessKeySecret string
-	rdsClient   *rds.Client
+	rdsClient       *rds.Client
+	kvstoreClient   *r_kvstore.Client
 }
 
 // NewProvider creates a new AliCloud provider instance
@@ -30,11 +32,17 @@ func NewProvider(region, accessKeyID, accessKeySecret string) (*Provider, error)
 		return nil, fmt.Errorf("failed to create RDS client: %w", err)
 	}
 	
+	kvstoreClient, err := r_kvstore.NewClientWithOptions(region, config, cred)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create KVStore client: %w", err)
+	}
+	
 	return &Provider{
 		region:          region,
 		accessKeyID:     accessKeyID,
 		accessKeySecret: accessKeySecret,
 		rdsClient:       rdsClient,
+		kvstoreClient:   kvstoreClient,
 	}, nil
 }
 
@@ -90,6 +98,29 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	request.DBInstanceNetType = "Intranet"
 	request.PayType = "Postpaid" // Pay-as-you-go
 	
+	// Set High Availability category
+	if spec.HighAvail {
+		request.Category = "HighAvailability"
+	} else {
+		request.Category = "Basic"
+	}
+	
+	// Check for existing instance (idempotency)
+	describeReq := rds.CreateDescribeDBInstancesRequest()
+	describeReq.RegionId = p.region
+	describeReq.DBInstanceId = spec.Name
+	if describeResp, err := p.rdsClient.DescribeDBInstances(describeReq); err == nil && len(describeResp.Items.DBInstance) > 0 {
+		// Instance exists, return current info
+		existing := describeResp.Items.DBInstance[0]
+		return &providers.DatabaseOutput{
+			ResourceID: existing.DBInstanceId,
+			Endpoint:   existing.ConnectionString,
+			Port:       getPortForEngine(spec.Engine),
+			Username:   "root",
+			Password:   "",
+		}, nil
+	}
+	
 	// Execute creation
 	response, err := p.rdsClient.CreateDBInstance(request)
 	if err != nil {
@@ -98,16 +129,58 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	
 	return &providers.DatabaseOutput{
 		ResourceID: response.DBInstanceId,
-		Endpoint:   "", // Will be populated after instance is ready
-		Port:       3306,
+		Endpoint:   "", // TODO: Poll DescribeDBInstanceAttribute to get connection string
+		Port:       getPortForEngine(spec.Engine),
 		Username:   "root",
-		Password:   "", // Should be set via separate call or retrieved from response
+		Password:   "", // TODO: Set via separate call or accept from spec
 	}, nil
 }
 
-// ProvisionCache creates a Redis cache instance (placeholder - requires KVStore client)
+// getPortForEngine returns the default port for the database engine
+func getPortForEngine(engine string) int {
+	switch engine {
+	case "postgresql", "PostgreSQL":
+		return 5432
+	case "mysql", "MySQL":
+		return 3306
+	default:
+		return 3306
+	}
+}
+
+// ProvisionCache creates a Redis cache instance
 func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec) (*providers.CacheOutput, error) {
-	return nil, fmt.Errorf("cache provisioning not yet implemented")
+	if p.kvstoreClient == nil {
+		return nil, fmt.Errorf("KVStore client not initialized")
+	}
+	
+	// Determine instance class based on memory
+	instanceClass := "redis.master.small.default"
+	if spec.MemoryMB >= 4096 {
+		instanceClass = "redis.master.mid.default"
+	}
+	
+	request := r_kvstore.CreateCreateInstanceRequest()
+	request.RegionId = p.region
+	request.InstanceClass = instanceClass
+	request.InstanceType = "Redis"
+	request.EngineVersion = spec.Version
+	if request.EngineVersion == "" {
+		request.EngineVersion = "5.0"
+	}
+	
+	// Execute creation
+	response, err := p.kvstoreClient.CreateInstance(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Redis instance: %w", err)
+	}
+	
+	return &providers.CacheOutput{
+		ResourceID: response.InstanceId,
+		Endpoint:   "", // Will be populated after instance is ready
+		Port:       6379,
+		Password:   "", // Should be retrieved after creation
+	}, nil
 }
 
 // ProvisionObjectStorage creates an OSS bucket (placeholder)

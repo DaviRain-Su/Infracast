@@ -64,9 +64,9 @@ func TestProvider_ProvisionDatabase_NotImplemented(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestProvider_ProvisionCache_NotImplemented validates placeholder
-func TestProvider_ProvisionCache_NotImplemented(t *testing.T) {
-	p := &Provider{}
+// TestProvider_ProvisionCache validates cache provisioning
+func TestProvider_ProvisionCache(t *testing.T) {
+	p := &Provider{region: "cn-hangzhou"}
 	
 	spec := providers.CacheSpec{
 		Name:     "testcache",
@@ -74,9 +74,10 @@ func TestProvider_ProvisionCache_NotImplemented(t *testing.T) {
 		MemoryMB: 256,
 	}
 	
+	// Should fail because client is nil
 	_, err := p.ProvisionCache(nil, spec)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.Contains(t, err.Error(), "not initialized")
 }
 
 // TestProvider_ProvisionObjectStorage_NotImplemented validates placeholder
