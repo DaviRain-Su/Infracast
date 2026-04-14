@@ -1,8 +1,10 @@
 # Infracast — Task Breakdown
 
-> **Version** 1.3 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner)
+> **Version** 1.4 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner), consistency fix by @codex_
 > **Phase**: dev-lifecycle Phase 4 (承接 Technical Spec v1.1 Frozen)
 > **Input**: PRD v1.1, Architecture v1.1, Technical Spec v1.1 (all Frozen)
+>
+> **v1.4 变更说明**: 修正文档一致性问题（版本页脚、总任务数、总工时、Acceptance Criteria 勾选状态、依赖图 Milestone C DONE 标记）。
 >
 > **v1.3 变更说明**: Milestone C 完成闭环。TC01-TC08 全部通过技术审查，代码已合并到 main 分支。
 >
@@ -535,14 +537,14 @@ TA01 ✅
  TB01 ─────→ TB05 ✅ ─┤
               └──────→ TB06 ✅
                         │
- TA04 ─────→ TC01 ──┐
- TB05 ─────→ TC02 ──┤
- TC02 ─────→ TC03 ──┤
- TC03 ─────→ TC04 ──┤
- TC01-04+TA09 → TC05
- TA05 ─────→ TC06
- TC05 ─────→ TC07
- TC05 ─────→ TC08
+ TA04 ─────→ TC01 ✅ ──┐
+ TB05 ─────→ TC02 ✅ ──┤
+ TC02 ─────→ TC03 ✅ ──┤
+ TC03 ─────→ TC04 ✅ ──┤
+ TC01-04+TA09 → TC05 ✅
+ TA05 ─────→ TC06 ✅
+ TC05 ─────→ TC07 ✅
+ TC05 ─────→ TC08 ✅
                 │
  TC05 ─────→ TD01 → TD04
  TC05 ─────→ TD02
@@ -564,21 +566,21 @@ TA01 ✅
 | C | 8 (8 done) | 24h | Week 7-10 |
 | D | 4 | 11h | Week 11-14 |
 | E | 3 | 9h | Week 15-16 |
-| **Total** | **30** | **92h** | **16 weeks** |
+| **Total** | **34** | **102h** | **16 weeks** |
 
 ---
 
 ## Acceptance Criteria (Phase 4)
 
-- [ ] Every task ≤ 4 hours
-- [ ] Dependencies are explicit and acyclic
-- [ ] Acceptance criteria are testable (not subjective)
-- [ ] All Tech Spec modules have corresponding tasks
-- [ ] Milestone goals match PRD v1.1 §10
-- [ ] Critical path identified
+- [x] Every task ≤ 4 hours
+- [x] Dependencies are explicit and acyclic
+- [x] Acceptance criteria are testable (not subjective)
+- [x] All Tech Spec modules have corresponding tasks
+- [x] Milestone goals match PRD v1.1 §10
+- [x] Critical path identified
 
 ---
 
 *— End of Document —*
 
-*Infracast Task Breakdown v1.2 (Frozen) | Phase 4 of dev-lifecycle | Confidential*
+*Infracast Task Breakdown v1.4 (Frozen) | Phase 4 of dev-lifecycle | Confidential*
