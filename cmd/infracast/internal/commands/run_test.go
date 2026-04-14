@@ -251,7 +251,7 @@ func TestValidateLocalPrerequisites(t *testing.T) {
 func TestJsonMarshal(t *testing.T) {
 	config := &LocalConfig{
 		Version:     "1.0",
-		AppName:     "test",
+		AppName:     "test-app",
 		Environment: "local",
 		LocalMode:   true,
 	}
@@ -259,5 +259,6 @@ func TestJsonMarshal(t *testing.T) {
 	data, err := jsonMarshal(config)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "version")
-	assert.Contains(t, string(data), "local-app")
+	assert.Contains(t, string(data), "test-app")
+	assert.Contains(t, string(data), "local_mode")
 }

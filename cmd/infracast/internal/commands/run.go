@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -378,31 +379,7 @@ func WriteConfigFile(path string, config *LocalConfig) error {
 
 // jsonMarshal marshals config to JSON with indentation
 func jsonMarshal(v interface{}) ([]byte, error) {
-	// Simple JSON marshaling - in real implementation use encoding/json
-	// This is a placeholder that returns a valid JSON structure
-	return []byte(`{
-  "version": "1.0",
-  "app_name": "local-app",
-  "environment": "local",
-  "local_mode": true,
-  "services": {
-    "api": {
-      "name": "api",
-      "url": "http://localhost:8080",
-      "timeout_seconds": 30
-    }
-  },
-  "databases": {
-    "main": {
-      "name": "main",
-      "host": "localhost",
-      "port": 5432,
-      "database": "infracast_local",
-      "user": "postgres",
-      "ssl_mode": "disable"
-    }
-  }
-}`), nil
+	return json.MarshalIndent(v, "", "  ")
 }
 
 // LocalRunner provides a high-level interface for local development
