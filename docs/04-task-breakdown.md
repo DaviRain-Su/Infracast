@@ -1,8 +1,10 @@
 # Infracast — Task Breakdown
 
-> **Version** 1.1 · **Date** 2026-04-14 · **Status** Frozen · **Author** @CC (Tech Review)
+> **Version** 1.2 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner)
 > **Phase**: dev-lifecycle Phase 4 (承接 Technical Spec v1.1 Frozen)
 > **Input**: PRD v1.1, Architecture v1.1, Technical Spec v1.1 (all Frozen)
+>
+> **v1.2 变更说明**: 经 @davirain 确认（2026-04-15），里程碑执行顺序调整为 A → B-CLI → B-Provider → C → D → E。原 Milestone B（TB01-TB06 Alicloud Provider Adapter）顺延，新增 B-CLI 阶段（B2.1-B2.4 CLI Framework）优先执行。原因：CLI 为低风险、无外部依赖的用户入口层，可与后续 Provider Adapter 并行准备。
 
 ---
 
@@ -140,9 +142,69 @@
 
 ---
 
-## 2. Milestone B — 核心供应链 (Week 3-6)
+## 2a. Milestone B-CLI — CLI 框架 (优先执行)
+
+> **Goal**: 完成 CLI 用户交互入口，为后续 Provider Adapter 和部署链路提供命令行骨架
+> **Priority change**: 2026-04-15 经 @davirain 确认，CLI 先行于 Provider Adapter 执行
+
+### B2.1: CLI Framework Setup
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA01 |
+| Deliverables | CLI framework with cobra/urfave, subcommand routing, help text |
+| Acceptance | 1. CLI binary with `init`, `deploy`, `destroy`, `status` subcommands registered. 2. `--help` output for each command. 3. Global flags: `--config`, `--env`, `--verbose`. |
+
+### B2.2: Provision Command
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | B2.1, TA08 |
+| Deliverables | `cmd/infracast/internal/commands/provision.go` |
+| Acceptance | 1. `infracast deploy` loads config, runs provision pipeline. 2. Connects to provisioner core (TA08). 3. Progress output. 4. Exit codes per Tech Spec §9.3. |
+
+### B2.3: Destroy Command
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | B2.1, TA08 |
+| Deliverables | `cmd/infracast/internal/commands/destroy.go` |
+| Acceptance | 1. `infracast destroy` tears down resources. 2. Confirmation prompt (skip with `--yes`). 3. Idempotent: destroying non-existent resources is a no-op. |
+
+### B2.4: Status Command
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | B2.1, TA02 |
+| Deliverables | `cmd/infracast/internal/commands/status.go` |
+| Acceptance | 1. `infracast status` reads state store and displays resource status. 2. Table output with resource name, type, status, last updated. 3. `--json` flag for machine-readable output. |
+
+### Milestone B-CLI Summary
+
+| Task | Est. | Dependencies | Parallel Group |
+|------|------|-------------|----------------|
+| B2.1 | 3h | TA01 | Group 1 |
+| B2.2 | 3h | B2.1, TA08 | Group 2 |
+| B2.3 | 2h | B2.1, TA08 | Group 2 |
+| B2.4 | 2h | B2.1, TA02 | Group 2 |
+
+**Total estimate**: 10h (≈ 1.5 working days)
+**Note**: B2.2/B2.3/B2.4 可并行开发
+
+---
+
+## 2b. Milestone B-Provider — 核心供应链 (顺延执行)
 
 > **Goal**: Alicloud 资源供应成功率 >= 95%
+> **Note**: 原 Milestone B，经 2026-04-15 优先级调整后顺延至 B-CLI 完成后执行
 
 ### TB01: Alicloud Adapter — Database (RDS)
 
@@ -209,7 +271,7 @@
 | Deliverables | Integration test suite |
 | Acceptance | 1. Create RDS + Redis + OSS with real Alicloud. 2. Verify all resources accessible. 3. Second run: all skipped (idempotent). 4. Modify spec: resources updated. 5. Cleanup: destroy all resources. 6. Success rate tracking (target >= 95%). |
 
-### Milestone B Summary
+### Milestone B-Provider Summary
 
 | Task | Est. | Dependencies | Parallel Group |
 |------|------|-------------|----------------|
