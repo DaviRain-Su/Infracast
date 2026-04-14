@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/DaviRain-Su/infracast/internal/credentials"
 	"github.com/DaviRain-Su/infracast/internal/mapper"
 	"github.com/DaviRain-Su/infracast/internal/state"
 	"github.com/DaviRain-Su/infracast/pkg/hash"
@@ -32,19 +33,42 @@ const (
 	ResourceStateDeleted ResourceState = "destroyed"
 )
 
+// ProvisionInput represents the input to the Provision operation
+type ProvisionInput struct {
+	EnvID       string                    `json:"env_id"`
+	BuildMeta   mapper.BuildMeta          `json:"build_meta"`
+	DryRun      bool                      `json:"dry_run"`
+	Credentials credentials.CredentialConfig `json:"credentials"`
+}
+
+// ProvisionResult represents the result of the Provision operation
+type ProvisionResult struct {
+	Success   bool             `json:"success"`
+	Resources []ResourceResult `json:"resources"`
+	Plan      *PlanResult      `json:"plan,omitempty"`
+	Errors    []ProvisionError `json:"errors,omitempty"`
+}
+
 // Provisioner orchestrates infrastructure provisioning
 type Provisioner struct {
-	registry *providers.Registry
-	store    *state.Store
-	mapper   *mapper.Mapper
+	registry    *providers.Registry
+	store       *state.Store
+	mapper      *mapper.Mapper
+	credentials *credentials.Manager
 }
 
 // NewProvisioner creates a new provisioner
-func NewProvisioner(registry *providers.Registry, store *state.Store, mapperInst *mapper.Mapper) *Provisioner {
+// Aligned with Tech Spec: NewProvisioner(store, creds)
+func NewProvisioner(store *state.Store, creds *credentials.Manager) *Provisioner {
+	// Create registry and mapper internally (P0: alicloud only)
+	registry := providers.NewRegistry()
+	mapperInst := mapper.NewMapper(registry)
+
 	return &Provisioner{
-		registry: registry,
-		store:    store,
-		mapper:   mapperInst,
+		registry:    registry,
+		store:       store,
+		mapper:      mapperInst,
+		credentials: creds,
 	}
 }
 
@@ -79,6 +103,76 @@ type ResourceResult struct {
 	Output    interface{} `json:"output,omitempty"`
 }
 
+// Provision is the high-level entry point for provisioning
+// Implements Tech Spec §3.4: Provision(ctx, ProvisionInput) (*ProvisionResult, error)
+func (p *Provisioner) Provision(ctx context.Context, input ProvisionInput) (*ProvisionResult, error) {
+	// Validate credentials first (EPROV001)
+	if p.credentials != nil {
+		_, err := p.credentials.GetCredentials(input.Credentials)
+		if err != nil {
+			return nil, &ProvisionError{
+				Code:      "EPROV001",
+				Message:   "failed to fetch credentials",
+				Retryable: true,
+				Cause:     err,
+			}
+		}
+	}
+
+	// Map build meta to resource specs
+	specs := p.mapper.MapToResourceSpecs(input.BuildMeta)
+
+	// Generate plan
+	plan, err := p.Plan(ctx, input.EnvID, specs)
+	if err != nil {
+		return nil, &ProvisionError{
+			Code:      "EPROV005",
+			Message:   "failed to generate provisioning plan",
+			Retryable: true,
+			Cause:     err,
+		}
+	}
+
+	// Dry run: return plan only
+	if input.DryRun {
+		return &ProvisionResult{
+			Success: true,
+			Plan:    plan,
+		}, nil
+	}
+
+	// Apply plan
+	applyResult, err := p.Apply(ctx, input.EnvID, plan)
+	if err != nil {
+		return nil, &ProvisionError{
+			Code:      "EPROV004",
+			Message:   "resource provisioning failed",
+			Retryable: true,
+			Cause:     err,
+		}
+	}
+
+	// Build result with errors
+	result := &ProvisionResult{
+		Success:   applyResult.Success,
+		Resources: applyResult.Resources,
+	}
+
+	// Collect errors from failed resources
+	for _, res := range applyResult.Resources {
+		if !res.Success {
+			result.Errors = append(result.Errors, ProvisionError{
+				ResourceName: res.Name,
+				Code:         "EPROV004",
+				Message:      res.ErrorMsg,
+				Retryable:    true,
+			})
+		}
+	}
+
+	return result, nil
+}
+
 // Plan generates a provisioning plan based on desired state
 func (p *Provisioner) Plan(ctx context.Context, envID string, specs []providers.ResourceSpec) (*PlanResult, error) {
 	var plans []ResourcePlan
@@ -86,7 +180,7 @@ func (p *Provisioner) Plan(ctx context.Context, envID string, specs []providers.
 	for _, spec := range specs {
 		plan, err := p.planResource(ctx, envID, spec)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to plan resource %s: %v", ErrPlanFailed, spec.Type, err)
+			return nil, fmt.Errorf("%w: failed to plan resource %s: %v", ErrInvalidSpec, spec.Type, err)
 		}
 		plans = append(plans, plan)
 	}
@@ -224,7 +318,7 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 	provider, err := p.registry.Get("alicloud") // P0: only alicloud
 	if err != nil {
 		result.Success = false
-		result.ErrorMsg = fmt.Sprintf("%s: provider not found: %v", ErrProviderNotFound, err)
+		result.ErrorMsg = fmt.Sprintf("%s: provider not found: %v", ErrInvalidSpec, err)
 		return result
 	}
 
@@ -240,7 +334,7 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 
 	if err := p.store.UpsertResource(ctx, resource); err != nil {
 		result.Success = false
-		result.ErrorMsg = fmt.Sprintf("%s: failed to update state: %v", ErrStateUpdateFailed, err)
+		result.ErrorMsg = fmt.Sprintf("%s: failed to update state: %v", ErrConcurrencyConflict, err)
 		return result
 	}
 
@@ -252,7 +346,7 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 			dbOutput, err := provider.ProvisionDatabase(ctx, *plan.Spec.DatabaseSpec)
 			if err != nil {
 				result.Success = false
-				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrProvisionFailed, err)
+				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrSDKRetryable, err)
 				p.updateResourceStatus(ctx, resource, ResourceStateFailed, result.ErrorMsg)
 				return result
 			}
@@ -263,7 +357,7 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 			cacheOutput, err := provider.ProvisionCache(ctx, *plan.Spec.CacheSpec)
 			if err != nil {
 				result.Success = false
-				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrProvisionFailed, err)
+				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrSDKRetryable, err)
 				p.updateResourceStatus(ctx, resource, ResourceStateFailed, result.ErrorMsg)
 				return result
 			}
@@ -274,7 +368,7 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 			objOutput, err := provider.ProvisionObjectStorage(ctx, *plan.Spec.ObjectStorageSpec)
 			if err != nil {
 				result.Success = false
-				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrProvisionFailed, err)
+				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrSDKRetryable, err)
 				p.updateResourceStatus(ctx, resource, ResourceStateFailed, result.ErrorMsg)
 				return result
 			}
@@ -285,7 +379,7 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 			compOutput, err := provider.ProvisionCompute(ctx, *plan.Spec.ComputeSpec)
 			if err != nil {
 				result.Success = false
-				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrProvisionFailed, err)
+				result.ErrorMsg = fmt.Sprintf("%s: %v", ErrSDKRetryable, err)
 				p.updateResourceStatus(ctx, resource, ResourceStateFailed, result.ErrorMsg)
 				return result
 			}
@@ -302,7 +396,7 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 	resource.Status = string(ResourceStateProvisioned)
 	if err := p.store.UpsertResource(ctx, resource); err != nil {
 		result.Success = false
-		result.ErrorMsg = fmt.Sprintf("%s: failed to update final state: %v", ErrStateUpdateFailed, err)
+		result.ErrorMsg = fmt.Sprintf("%s: failed to update final state: %v", ErrConcurrencyConflict, err)
 		return result
 	}
 

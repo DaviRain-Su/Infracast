@@ -3,23 +3,43 @@ package provisioner
 
 import "errors"
 
+// ProvisionError represents a structured provisioning error
+type ProvisionError struct {
+	ResourceName string // Resource that caused the error
+	Code         string // Error code (EPROVxxx)
+	Message      string // Human-readable message
+	Retryable    bool   // Whether the error is retryable
+	Cause        error  // Underlying cause
+}
+
+func (e *ProvisionError) Error() string {
+	return e.Code + ": " + e.Message
+}
+
+// Unwrap returns the underlying error
+func (e *ProvisionError) Unwrap() error {
+	return e.Cause
+}
+
 // Error codes for provisioner module (EPROV001-EPROV010)
+// Aligned with Tech Spec §3.5
 var (
-	// EPROV001: Plan generation failed
-	ErrPlanFailed = errors.New("EPROV001: failed to generate provisioning plan")
+	// EPROV001: Credential fetch failed (from credentials module)
+	ErrCredentialFetch = errors.New("EPROV001: failed to fetch credentials")
 
-	// EPROV002: Provider not found
-	ErrProviderNotFound = errors.New("EPROV002: cloud provider not found")
+	// EPROV002: SDK retryable error (cloud provider SDK returned retryable error)
+	ErrSDKRetryable = errors.New("EPROV002: cloud provider SDK retryable error")
 
-	// EPROV003: State update failed
-	ErrStateUpdateFailed = errors.New("EPROV003: failed to update resource state")
+	// EPROV003: Quota exceeded (insufficient cloud resource quota)
+	ErrQuotaExceeded = errors.New("EPROV003: cloud resource quota exceeded")
 
-	// EPROV004: Resource provisioning failed
-	ErrProvisionFailed = errors.New("EPROV004: resource provisioning failed")
+	// EPROV004: Dependency conflict (resource dependencies cannot be satisfied)
+	ErrDependencyConflict = errors.New("EPROV004: resource dependency conflict")
 
-	// EPROV005: Invalid resource type
-	ErrInvalidResourceType = errors.New("EPROV005: invalid resource type")
+	// EPROV005: Invalid spec (invalid resource specification)
+	ErrInvalidSpec = errors.New("EPROV005: invalid resource specification")
 
+	// Legacy/Internal errors (EPROV006-010)
 	// EPROV006: Dependency not met
 	ErrDependencyNotMet = errors.New("EPROV006: resource dependency not met")
 
@@ -34,6 +54,9 @@ var (
 
 	// EPROV010: Concurrency conflict
 	ErrConcurrencyConflict = errors.New("EPROV010: concurrent update detected")
+
+	// Legacy error (used internally)
+	ErrInvalidResourceType = errors.New("invalid resource type")
 )
 
 // Retryable returns true if the error is retryable
@@ -41,9 +64,13 @@ func IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
+	// Check ProvisionError
+	if pe, ok := err.(*ProvisionError); ok {
+		return pe.Retryable
+	}
 	switch {
-	case errors.Is(err, ErrPlanFailed),
-		errors.Is(err, ErrStateUpdateFailed),
+	case errors.Is(err, ErrCredentialFetch),
+		errors.Is(err, ErrSDKRetryable),
 		errors.Is(err, ErrConcurrencyConflict):
 		return true
 	default:
@@ -58,10 +85,13 @@ func HasSideEffect(err error) bool {
 	}
 	// Most provision errors have side effects (partial provisioning)
 	switch {
-	case errors.Is(err, ErrProvisionFailed),
-		errors.Is(err, ErrDestroyFailed):
+	case errors.Is(err, ErrDestroyFailed):
 		return true
 	default:
+		// Check if it's a ProvisionError with resource name (indicates partial failure)
+		if pe, ok := err.(*ProvisionError); ok && pe.ResourceName != "" {
+			return true
+		}
 		return false
 	}
 }
