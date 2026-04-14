@@ -213,6 +213,38 @@ func TestGenerator_Merge_Empty(t *testing.T) {
 	assert.Equal(t, "host1", merged.SQLServers["db1"].Host)
 }
 
+// TestGenerator_Merge_NilBase validates merge with nil base
+func TestGenerator_Merge_NilBase(t *testing.T) {
+	g := NewGenerator(nil)
+
+	var base *InfraConfig
+	override := &InfraConfig{
+		SQLServers: map[string]SQLServer{
+			"db1": {Host: "host1", Port: 3306},
+		},
+	}
+
+	merged := g.Merge(base, override)
+	assert.Equal(t, "host1", merged.SQLServers["db1"].Host)
+	assert.Equal(t, 3306, merged.SQLServers["db1"].Port)
+}
+
+// TestGenerator_Merge_NilOverride validates merge with nil override
+func TestGenerator_Merge_NilOverride(t *testing.T) {
+	g := NewGenerator(nil)
+
+	base := &InfraConfig{
+		SQLServers: map[string]SQLServer{
+			"db1": {Host: "host1", Port: 3306},
+		},
+	}
+	var override *InfraConfig
+
+	merged := g.Merge(base, override)
+	assert.Equal(t, "host1", merged.SQLServers["db1"].Host)
+	assert.Equal(t, 3306, merged.SQLServers["db1"].Port)
+}
+
 // TestGenerator_Write validates file writing
 func TestGenerator_Write(t *testing.T) {
 	g := NewGenerator(nil)
@@ -337,6 +369,24 @@ func TestInfraConfig_ToJSON_Nil(t *testing.T) {
 	_, err := cfg.ToJSON()
 	assert.Error(t, err)
 	assert.Equal(t, ErrInvalidConfig, err)
+}
+
+// TestGenerator_Errors validates error codes (EIGEN001-003)
+func TestGenerator_Errors(t *testing.T) {
+	// EIGEN001: Invalid config
+	err := ErrInvalidConfig
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EIGEN001")
+
+	// EIGEN002: Merge conflict
+	err = ErrMergeConflict
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EIGEN002")
+
+	// EIGEN003: Write failed
+	err = ErrWriteFailed
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EIGEN003")
 }
 
 // TestInfraConfig_StructFields validates all required fields exist

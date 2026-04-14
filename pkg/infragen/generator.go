@@ -111,26 +111,30 @@ func (g *Generator) Merge(base, override *InfraConfig) *InfraConfig {
 		ObjectStorage: make(map[string]ObjectStore),
 	}
 
-	// Copy base values
-	for k, v := range base.SQLServers {
-		result.SQLServers[k] = v
-	}
-	for k, v := range base.Redis {
-		result.Redis[k] = v
-	}
-	for k, v := range base.ObjectStorage {
-		result.ObjectStorage[k] = v
+	// Copy base values (handle nil base)
+	if base != nil {
+		for k, v := range base.SQLServers {
+			result.SQLServers[k] = v
+		}
+		for k, v := range base.Redis {
+			result.Redis[k] = v
+		}
+		for k, v := range base.ObjectStorage {
+			result.ObjectStorage[k] = v
+		}
 	}
 
-	// Override with new values
-	for k, v := range override.SQLServers {
-		result.SQLServers[k] = v
-	}
-	for k, v := range override.Redis {
-		result.Redis[k] = v
-	}
-	for k, v := range override.ObjectStorage {
-		result.ObjectStorage[k] = v
+	// Override with new values (handle nil override)
+	if override != nil {
+		for k, v := range override.SQLServers {
+			result.SQLServers[k] = v
+		}
+		for k, v := range override.Redis {
+			result.Redis[k] = v
+		}
+		for k, v := range override.ObjectStorage {
+			result.ObjectStorage[k] = v
+		}
 	}
 
 	return result
