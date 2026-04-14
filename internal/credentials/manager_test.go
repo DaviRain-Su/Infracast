@@ -3,6 +3,7 @@ package credentials
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -237,4 +238,105 @@ func TestManager_IsSTS(t *testing.T) {
 
 	// Non-existent
 	assert.False(t, m.IsSTS("unknown"))
+}
+
+// TestManager_GetCredentials validates the unified credential retrieval interface
+func TestManager_GetCredentials(t *testing.T) {
+	m := NewManager()
+
+	// Store credentials
+	m.Store("alicloud", "AK123456", "SK789012", "cn-hangzhou")
+
+	// Test basic retrieval
+	config := CredentialConfig{
+		Provider: "alicloud",
+	}
+	cred, err := m.GetCredentials(config)
+	require.NoError(t, err)
+	assert.Equal(t, "alicloud", cred.Provider)
+	assert.Equal(t, "AK123456", cred.AccessKey)
+	assert.Equal(t, "cn-hangzhou", cred.Region)
+}
+
+// TestManager_GetCredentialsWithRegion validates region override
+func TestManager_GetCredentialsWithRegion(t *testing.T) {
+	m := NewManager()
+
+	// Store credentials with one region
+	m.Store("alicloud", "AK123", "SK456", "cn-hangzhou")
+
+	// Retrieve with different region override
+	config := CredentialConfig{
+		Provider: "alicloud",
+		Region:   "cn-shanghai",
+	}
+	cred, err := m.GetCredentials(config)
+	require.NoError(t, err)
+	assert.Equal(t, "cn-shanghai", cred.Region) // Should be overridden
+}
+
+// TestManager_GetCredentialsNotFound validates error for missing credentials
+func TestManager_GetCredentialsNotFound(t *testing.T) {
+	m := NewManager()
+
+	config := CredentialConfig{
+		Provider: "unknown",
+	}
+	_, err := m.GetCredentials(config)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ECRED005")
+}
+
+// TestManager_GetCredentialsSTSExpiration validates STS expiration check
+func TestManager_GetCredentialsSTSExpiration(t *testing.T) {
+	m := NewManager()
+
+	// Store STS credentials that are already expired
+	sts := STSCredential{
+		RoleARN:    "arn:aws:iam::123:role/test",
+		AccessKeyID: "STS123",
+		Expiration: time.Now().Add(-1 * time.Hour).Unix(), // Expired 1 hour ago
+	}
+	m.StoreWithSTS("alicloud", sts, "cn-hangzhou")
+
+	config := CredentialConfig{
+		Provider: "alicloud",
+	}
+	_, err := m.GetCredentials(config)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ECRED018") // STS credentials expired
+}
+
+// TestManager_GetCredentialsSTSValid validates retrieval of valid STS credentials
+func TestManager_GetCredentialsSTSValid(t *testing.T) {
+	m := NewManager()
+
+	// Store STS credentials that are still valid
+	sts := STSCredential{
+		RoleARN:     "arn:aws:iam::123:role/test",
+		AccessKeyID: "STS123",
+		Expiration:  time.Now().Add(1 * time.Hour).Unix(), // Valid for 1 more hour
+	}
+	m.StoreWithSTS("alicloud", sts, "cn-hangzhou")
+
+	config := CredentialConfig{
+		Provider: "alicloud",
+	}
+	cred, err := m.GetCredentials(config)
+	require.NoError(t, err)
+	assert.NotNil(t, cred.STS)
+	assert.Equal(t, "STS123", cred.STS.AccessKeyID)
+}
+
+// TestCredentialConfig_Fields validates CredentialConfig struct
+func TestCredentialConfig_Fields(t *testing.T) {
+	config := CredentialConfig{
+		Provider:      "alicloud",
+		Region:        "cn-hangzhou",
+		RefreshWindow: 5 * time.Minute,
+	}
+
+	assert.Equal(t, "alicloud", config.Provider)
+	assert.Equal(t, "cn-hangzhou", config.Region)
+	assert.Equal(t, 5*time.Minute, config.RefreshWindow)
 }

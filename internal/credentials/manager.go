@@ -4,6 +4,7 @@ package credentials
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // Credential represents cloud provider credentials
@@ -23,7 +24,14 @@ type STSCredential struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	SessionToken    string
-	Expiration      int64
+	Expiration      int64 // Unix timestamp
+}
+
+// CredentialConfig provides configuration for credential retrieval
+type CredentialConfig struct {
+	Provider    string        // Cloud provider name (e.g., "alicloud")
+	Region      string        // Target region
+	RefreshWindow time.Duration // Auto-refresh before expiration (default: 5min)
 }
 
 // Manager provides credential management
@@ -152,4 +160,34 @@ func (m *Manager) IsSTS(provider string) bool {
 		return false
 	}
 	return cred.STS != nil
+}
+
+// GetCredentials retrieves credentials with optional auto-refresh for STS
+// Unified interface for credential retrieval (Tech Spec §4.2)
+func (m *Manager) GetCredentials(config CredentialConfig) (*Credential, error) {
+	cred, exists := m.credentials[config.Provider]
+	if !exists {
+		return nil, fmt.Errorf("ECRED005: credentials not found for provider: %s", config.Provider)
+	}
+
+	// Apply region override if specified
+	if config.Region != "" {
+		cred.Region = config.Region
+	}
+
+	// Check STS expiration and auto-refresh if needed
+	if cred.STS != nil {
+		refreshWindow := config.RefreshWindow
+		if refreshWindow == 0 {
+			refreshWindow = 5 * time.Minute // Default: refresh 5 min before expiration
+		}
+
+		expiration := time.Unix(cred.STS.Expiration, 0)
+		if time.Until(expiration) < refreshWindow {
+			// STS credentials need refresh - return error to trigger refresh flow
+			return nil, fmt.Errorf("ECRED018: STS credentials expired or expiring soon for provider: %s", config.Provider)
+		}
+	}
+
+	return &cred, nil
 }
