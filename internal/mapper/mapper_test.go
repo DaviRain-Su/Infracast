@@ -1,6 +1,8 @@
 package mapper
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/DaviRain-Su/infracast/internal/config"
@@ -123,7 +125,7 @@ func TestMapper_mapDatabase(t *testing.T) {
 	assert.Equal(t, "default-db", spec.DatabaseSpec.Name)
 	assert.Equal(t, "postgresql", spec.DatabaseSpec.Engine)
 	assert.Equal(t, "rds.pg.s1.small", spec.DatabaseSpec.InstanceClass)
-	assert.Equal(t, 50, spec.DatabaseSpec.StorageGB)
+	assert.Equal(t, 20, spec.DatabaseSpec.StorageGB)
 	assert.False(t, spec.DatabaseSpec.HighAvail)
 
 	// Test with override
@@ -140,7 +142,7 @@ func TestMapper_mapCache(t *testing.T) {
 	assert.Equal(t, "cache", spec.Type)
 	assert.Equal(t, "mycache", spec.CacheSpec.Name)
 	assert.Equal(t, "redis", spec.CacheSpec.Engine)
-	assert.Equal(t, 1024, spec.CacheSpec.MemoryMB)
+	assert.Equal(t, 256, spec.CacheSpec.MemoryMB)
 }
 
 func TestMapper_mapObjectStorage(t *testing.T) {
@@ -200,4 +202,122 @@ func TestBuildMeta_Fields(t *testing.T) {
 	assert.Len(t, meta.Caches, 2)
 	assert.Len(t, meta.ObjectStores, 1)
 	assert.Equal(t, "abc123", meta.BuildCommit)
+}
+
+// TestMapper_ScanSources validates source code scanning for resource declarations
+func TestMapper_ScanSources(t *testing.T) {
+	cfg := &config.Config{}
+	mapper := NewMapper(cfg)
+
+	// Create temporary test directory with sample Go files
+	tmpDir := t.TempDir()
+
+	// Create a file with database declaration
+	dbFile := filepath.Join(tmpDir, "db.go")
+	dbContent := `package main
+
+import "encore.dev/storage/sql"
+
+// Define databases
+var UsersDB = &sql.SQLDatabase{Name: "users"}
+var OrdersDB = &sql.SQLDatabase{Name: "orders"}
+`
+	require.NoError(t, os.WriteFile(dbFile, []byte(dbContent), 0644))
+
+	// Create a file with cache declaration
+	cacheFile := filepath.Join(tmpDir, "cache.go")
+	cacheContent := `package main
+
+import "encore.dev/storage/cache"
+
+// Define caches
+var SessionCache = &cache.Cache{Name: "session"}
+`
+	require.NoError(t, os.WriteFile(cacheFile, []byte(cacheContent), 0644))
+
+	// Scan sources
+	declarations, err := mapper.ScanSources(tmpDir)
+	require.NoError(t, err)
+
+	// Should find 3 declarations (2 databases + 1 cache)
+	assert.Len(t, declarations, 3)
+
+	// Verify database declarations
+	var dbNames []string
+	var cacheNames []string
+	for _, decl := range declarations {
+		if decl.Type == "database" {
+			dbNames = append(dbNames, decl.Name)
+		} else if decl.Type == "cache" {
+			cacheNames = append(cacheNames, decl.Name)
+		}
+		assert.NotEmpty(t, decl.Location)
+		assert.Greater(t, decl.Line, 0)
+	}
+	assert.Contains(t, dbNames, "users")
+	assert.Contains(t, dbNames, "orders")
+	assert.Contains(t, cacheNames, "session")
+}
+
+// TestMapper_MapToMappedResources validates DAG resource mapping
+func TestMapper_MapToMappedResources(t *testing.T) {
+	cfg := &config.Config{}
+	mapper := NewMapper(cfg)
+
+	specs := []providers.ResourceSpec{
+		{Type: "database", DatabaseSpec: &providers.DatabaseSpec{Name: "users"}},
+		{Type: "cache", CacheSpec: &providers.CacheSpec{Name: "session"}},
+		{Type: "object_storage", ObjectStorageSpec: &providers.ObjectStorageSpec{Name: "assets"}},
+	}
+
+	mapped := mapper.MapToMappedResources(specs)
+
+	// Should have 3 mapped resources
+	require.Len(t, mapped, 3)
+
+	// Verify priorities (database=1, cache=2, object_storage=3)
+	for _, mr := range mapped {
+		switch mr.Type {
+		case "database":
+			assert.Equal(t, 1, mr.Priority)
+		case "cache":
+			assert.Equal(t, 2, mr.Priority)
+		case "object_storage":
+			assert.Equal(t, 3, mr.Priority)
+		}
+	}
+}
+
+// TestMappedResource_Fields validates MappedResource struct fields
+func TestMappedResource_Fields(t *testing.T) {
+	mr := MappedResource{
+		ResourceSpec: providers.ResourceSpec{
+			Type: "database",
+			DatabaseSpec: &providers.DatabaseSpec{
+				Name: "users",
+			},
+		},
+		Priority:  1,
+		DependsOn: []string{"cache:session"},
+	}
+
+	assert.Equal(t, "database", mr.Type)
+	assert.Equal(t, "users", mr.DatabaseSpec.Name)
+	assert.Equal(t, 1, mr.Priority)
+	assert.Equal(t, []string{"cache:session"}, mr.DependsOn)
+}
+
+// TestResourceDeclaration_Fields validates ResourceDeclaration struct fields
+func TestResourceDeclaration_Fields(t *testing.T) {
+	decl := ResourceDeclaration{
+		Type:     "database",
+		Name:     "users",
+		Location: "/app/db.go",
+		Line:     42,
+	}
+
+	assert.Equal(t, "database", decl.Type)
+	assert.Equal(t, "users", decl.Name)
+	assert.Equal(t, "/app/db.go", decl.Location)
+	assert.Equal(t, 42, decl.Line)
 }

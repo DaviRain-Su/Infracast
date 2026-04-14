@@ -2,7 +2,12 @@
 package mapper
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/DaviRain-Su/infracast/internal/config"
 	"github.com/DaviRain-Su/infracast/providers"
@@ -19,6 +24,21 @@ type BuildMeta struct {
 	PubSubTopics   []string `json:"pubsub_topics"` // P1 placeholder
 	BuildCommit    string   `json:"build_commit"`
 	BuildImage     string   `json:"build_image"`
+}
+
+// ResourceDeclaration represents a discovered resource declaration in source code
+type ResourceDeclaration struct {
+	Type     string // "database", "cache", "object_storage"
+	Name     string
+	Location string // file path
+	Line     int
+}
+
+// MappedResource represents a resource with DAG ordering information
+type MappedResource struct {
+	providers.ResourceSpec
+	Priority  int      // Lower = earlier in provisioning order
+	DependsOn []string // Resource dependencies (e.g., ["database:users"])
 }
 
 // Mapper maps build metadata to resource specifications
@@ -63,7 +83,7 @@ func (m *Mapper) mapDatabase(name string) providers.ResourceSpec {
 		Engine:        "postgresql", // Default
 		Version:       "15",         // Default
 		InstanceClass: "rds.pg.s1.small",
-		StorageGB:     50,
+		StorageGB:     20, // Default per Tech Spec v1.1
 		HighAvail:     false,
 	}
 
@@ -90,7 +110,7 @@ func (m *Mapper) mapCache(name string) providers.ResourceSpec {
 		Name:           name,
 		Engine:         "redis",
 		Version:        "7",
-		MemoryMB:       1024,
+		MemoryMB:       256, // Default per Tech Spec v1.1
 		EvictionPolicy: "allkeys-lru",
 	}
 
@@ -143,4 +163,99 @@ func (m *Mapper) GetResourceDependencies(serviceName string, meta BuildMeta) ([]
 		deps = append(deps, fmt.Sprintf("cache:%s", cache))
 	}
 	return deps, nil
+}
+
+// ScanSources scans source code for Encore resource declarations
+// Uses regex patterns to find //encore:api, SQLDatabase, etc.
+func (m *Mapper) ScanSources(sourceDir string) ([]ResourceDeclaration, error) {
+	var declarations []ResourceDeclaration
+
+	// Regex patterns for different resource types
+	// Match patterns like: Name: "users" or Name: 'users'
+	patterns := map[string]*regexp.Regexp{
+		"database":       regexp.MustCompile(`SQLDatabase.*Name\s*:\s*["'](\w+)["']`),
+		"cache":          regexp.MustCompile(`Cache.*Name\s*:\s*["'](\w+)["']`),
+		"object_storage": regexp.MustCompile(`ObjectStorage.*Name\s*:\s*["'](\w+)["']`),
+	}
+
+	// Walk the source directory
+	err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		lineNum := 0
+		for scanner.Scan() {
+			lineNum++
+			line := scanner.Text()
+
+			for resType, pattern := range patterns {
+				matches := pattern.FindStringSubmatch(line)
+				if len(matches) > 1 {
+					declarations = append(declarations, ResourceDeclaration{
+						Type:     resType,
+						Name:     matches[1],
+						Location: path,
+						Line:     lineNum,
+					})
+				}
+			}
+		}
+
+		return scanner.Err()
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("EMAP003: failed to scan sources: %w", err)
+	}
+
+	return declarations, nil
+}
+
+// MapToMappedResources converts resource specs to MappedResource with DAG info
+func (m *Mapper) MapToMappedResources(specs []providers.ResourceSpec) []MappedResource {
+	var mapped []MappedResource
+
+	for _, spec := range specs {
+		mr := MappedResource{
+			ResourceSpec: spec,
+			Priority:     m.calculatePriority(spec.Type),
+			DependsOn:    m.calculateDependencies(spec),
+		}
+		mapped = append(mapped, mr)
+	}
+
+	return mapped
+}
+
+// calculatePriority determines provisioning priority (lower = earlier)
+// Order: databases (1) → caches (2) → object_storage (3)
+func (m *Mapper) calculatePriority(resourceType string) int {
+	switch resourceType {
+	case "database":
+		return 1
+	case "cache":
+		return 2
+	case "object_storage":
+		return 3
+	default:
+		return 10
+	}
+}
+
+// calculateDependencies extracts dependencies from resource spec
+func (m *Mapper) calculateDependencies(spec providers.ResourceSpec) []string {
+	// For now, services depend on databases and caches
+	// This can be extended based on actual service code analysis
+	return []string{}
 }
