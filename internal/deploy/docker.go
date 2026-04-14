@@ -58,7 +58,7 @@ func (a *ACRClient) PushImage(ctx context.Context, localImage, tag string) (stri
 		}
 	}
 
-	return "", fmt.Errorf("EDEPLOY001: failed to push image after 3 attempts: %w", lastErr)
+	return "", fmt.Errorf("EDEPLOY040: failed to push image after 3 attempts: %w", lastErr)
 }
 
 // pushWithSDK attempts to push using ACR SDK (placeholder for actual implementation)

@@ -51,8 +51,10 @@ func (h *HealthChecker) CheckStatus(ctx context.Context, deploymentName string, 
 	for {
 		select {
 		case <-ctx.Done():
-			// Timeout reached - trigger rollback
-			rollbackErr := h.rollbackOnTimeout(ctx, deploymentName)
+			// Timeout reached - trigger rollback with fresh context
+			rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer rollbackCancel()
+			rollbackErr := h.rollbackOnTimeout(rollbackCtx, deploymentName)
 			if rollbackErr != nil {
 				return fmt.Errorf("EDEPLOY050: deployment timeout after %v and rollback failed: %w", timeout, rollbackErr)
 			}
