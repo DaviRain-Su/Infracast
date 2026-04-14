@@ -87,6 +87,9 @@ func (m *MockCloudProvider) ProvisionCache(ctx context.Context, spec providers.C
 	if m.shouldError && m.errorType == "retryable" {
 		return nil, fmt.Errorf("retryable error: connection timeout")
 	}
+	if m.shouldError && m.errorType == "non-retryable" {
+		return nil, fmt.Errorf("non-retryable error: invalid cache configuration")
+	}
 
 	output := &providers.CacheOutput{
 		ResourceID: fmt.Sprintf("cache-%s-%s", m.name, spec.Name),

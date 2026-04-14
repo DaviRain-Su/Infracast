@@ -353,11 +353,12 @@ overrides:
 }
 
 // TestPipeline_PartialFailure validates failure isolation
+// Injects failure to verify failed resource doesn't affect others
 func TestPipeline_PartialFailure(t *testing.T) {
 	prov, store, ctx := setupTest(t)
 	mockProvider := NewMockCloudProvider("alicloud")
 
-	// Create resources - one will be configured to fail
+	// Phase 1: Initial resources - all succeed
 	resources := []providers.ResourceSpec{
 		{
 			Type: "database",
@@ -373,14 +374,6 @@ func TestPipeline_PartialFailure(t *testing.T) {
 				Name:      "db2",
 				Engine:    "postgresql",
 				StorageGB: 20,
-			},
-		},
-		{
-			Type: "cache",
-			CacheSpec: &providers.CacheSpec{
-				Name:     "cache1",
-				Engine:   "redis",
-				MemoryMB: 256,
 			},
 		},
 	}
@@ -399,17 +392,82 @@ func TestPipeline_PartialFailure(t *testing.T) {
 	result1, err := prov.Provision(ctx, input)
 	require.NoError(t, err)
 	require.True(t, result1.Success)
-	require.Len(t, result1.Resources, 3)
+	require.Len(t, result1.Resources, 2)
 
 	// Verify all provisioned
 	stateResources, err := store.ListResourcesByEnv(ctx, "partial-test")
 	require.NoError(t, err)
-	require.Len(t, stateResources, 3)
-
-	// Verify isolation: one resource should not affect others
+	require.Len(t, stateResources, 2)
 	for _, res := range stateResources {
 		assert.Equal(t, "provisioned", res.Status)
 	}
+
+	// Phase 2: Add new resource and inject failure
+	mockProvider.SetError(true, "non-retryable")
+	resourcesWithFailure := []providers.ResourceSpec{
+		{
+			Type: "database",
+			DatabaseSpec: &providers.DatabaseSpec{
+				Name:      "db1",
+				Engine:    "postgresql",
+				StorageGB: 20,
+			},
+		},
+		{
+			Type: "database",
+			DatabaseSpec: &providers.DatabaseSpec{
+				Name:      "db2",
+				Engine:    "postgresql",
+				StorageGB: 20,
+			},
+		},
+		{
+			// This new resource will fail
+			Type: "cache",
+			CacheSpec: &providers.CacheSpec{
+				Name:     "failing-cache",
+				Engine:   "redis",
+				MemoryMB: 256,
+			},
+		},
+	}
+
+	input2 := provisioner.ProvisionInput{
+		EnvID:     "partial-test",
+		Resources: resourcesWithFailure,
+		Provider:  mockProvider,
+		Credentials: credentials.CredentialConfig{
+			Provider: "alicloud",
+			Region:   "cn-hangzhou",
+		},
+	}
+
+	// Second provision - new resource fails
+	result2, err := prov.Provision(ctx, input2)
+	// Should not error at provision level, but result.Success will be false
+	require.NoError(t, err)
+	require.NotNil(t, result2)
+	require.False(t, result2.Success, "Should have partial failure")
+
+	// Verify isolation: original resources remain provisioned, new one failed
+	stateResources2, err := store.ListResourcesByEnv(ctx, "partial-test")
+	require.NoError(t, err)
+	
+	for _, res := range stateResources2 {
+		switch res.ResourceName {
+		case "db1", "db2":
+			// Original resources should remain provisioned (isolation)
+			assert.Equal(t, "provisioned", res.Status, 
+				"Existing resource %s should remain provisioned", res.ResourceName)
+		case "failing-cache":
+			// New failing resource should be in failed state
+			assert.Equal(t, "failed", res.Status,
+				"New failing resource should be marked as failed")
+		}
+	}
+
+	// Reset error for cleanup
+	mockProvider.SetError(false, "")
 }
 
 // TestPipeline_DestroyAndReprovision validates destroy cycle
