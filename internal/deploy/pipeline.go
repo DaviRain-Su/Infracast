@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/DaviRain-Su/infracast/internal/state"
 )
 
 // Pipeline orchestrates the full deployment process
@@ -16,6 +18,7 @@ type Pipeline struct {
 	k8sClient       *K8sClient
 	healthChecker   *HealthChecker
 	rollbackManager *RollbackManager
+	auditStore      *state.AuditStore
 	verbose         bool
 }
 
@@ -62,11 +65,26 @@ func NewPipeline(verbose bool) *Pipeline {
 	}
 }
 
+// SetAuditStore sets the audit store for logging
+func (p *Pipeline) SetAuditStore(store *state.AuditStore) {
+	p.auditStore = store
+}
+
 // Execute runs all 7 deployment steps
 func (p *Pipeline) Execute(ctx context.Context, input *PipelineInput) *PipelineResult {
 	start := time.Now()
 	result := &PipelineResult{
 		Steps: make([]StepResult, 0, 7),
+	}
+
+	// Log deployment start
+	if p.auditStore != nil {
+		_ = p.auditStore.Log(ctx, state.AuditLevelInfo, state.AuditActionDeploy,
+			fmt.Sprintf("Deployment started for %s to %s", input.AppName, input.Env),
+			state.WithAuditEnv(input.Env),
+			state.WithAuditDetail("commit", input.Commit),
+			state.WithAuditDetail("image_tag", input.ImageTag),
+		)
 	}
 
 	// Setup graceful shutdown handling
@@ -182,6 +200,22 @@ func (p *Pipeline) finalizeResult(result *PipelineResult, start time.Time, exitC
 	result.ExitCode = exitCode
 	result.Error = err
 	result.Success = exitCode == 0
+
+	// Log deployment completion
+	if p.auditStore != nil {
+		level := state.AuditLevelInfo
+		message := "Deployment completed successfully"
+		if !result.Success {
+			level = state.AuditLevelError
+			message = "Deployment failed"
+		}
+		_ = p.auditStore.Log(context.Background(), level, state.AuditActionDeploy,
+			message,
+			state.WithAuditDetail("exit_code", exitCode),
+			state.WithAuditDetail("duration_ms", result.Duration.Milliseconds()),
+		)
+	}
+
 	return result
 }
 
