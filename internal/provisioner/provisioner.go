@@ -37,6 +37,8 @@ const (
 type ProvisionInput struct {
 	EnvID       string                    `json:"env_id"`
 	BuildMeta   mapper.BuildMeta          `json:"build_meta"`
+	Resources   []providers.ResourceSpec  `json:"resources,omitempty"` // Explicit resource specs (optional)
+	Provider    providers.CloudProviderInterface `json:"-"` // Provider implementation
 	DryRun      bool                      `json:"dry_run"`
 	Credentials credentials.CredentialConfig `json:"credentials"`
 }
@@ -119,8 +121,18 @@ func (p *Provisioner) Provision(ctx context.Context, input ProvisionInput) (*Pro
 		}
 	}
 
-	// Map build meta to resource specs
-	specs := p.mapper.MapToResourceSpecs(input.BuildMeta)
+	// Use explicit resources if provided, otherwise map from build meta
+	var specs []providers.ResourceSpec
+	if len(input.Resources) > 0 {
+		specs = input.Resources
+	} else {
+		specs = p.mapper.MapToResourceSpecs(input.BuildMeta)
+	}
+
+	// Register provider if provided
+	if input.Provider != nil {
+		p.registry.Register(input.Provider)
+	}
 
 	// Generate plan
 	plan, err := p.Plan(ctx, input.EnvID, specs)
