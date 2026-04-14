@@ -1,8 +1,10 @@
 # Infracast — Task Breakdown
 
-> **Version** 1.4 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner), consistency fix by @codex_
+> **Version** 1.5 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner), consistency fix by @codex_
 > **Phase**: dev-lifecycle Phase 4 (承接 Technical Spec v1.1 Frozen)
 > **Input**: PRD v1.1, Architecture v1.1, Technical Spec v1.1 (all Frozen)
+>
+> **v1.5 变更说明**: Milestone D 完成闭环。TD01-TD04 全部通过技术审查，代码已合并到 main 分支。
 >
 > **v1.4 变更说明**: 修正文档一致性问题（版本页脚、总任务数、总工时、Acceptance Criteria 勾选状态、依赖图 Milestone C DONE 标记）。
 >
@@ -414,7 +416,7 @@
 
 > **Goal**: CLI 发布 + 3 个示例应用在阿里云可重复部署
 
-### TD01: CLI Polish (init / env / deploy UX)
+### TD01: CLI Polish (init / env / deploy UX) ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -424,7 +426,7 @@
 | Deliverables | Updated CLI commands with error messages, help text, progress indicators |
 | Acceptance | 1. `infracast init` creates `infracast.yaml` + scaffold. 2. `infracast env create/list/destroy` works end-to-end. 3. `infracast deploy` shows progress bar/spinner. 4. All error codes display suggested fix. |
 
-### TD02: Audit Logging
+### TD02: Audit Logging ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -434,7 +436,7 @@
 | Deliverables | `internal/state/audit.go`, `audit_test.go` |
 | Acceptance | 1. Append-only audit log table (SQLite). 2. Every deploy/provision action logged. 3. `infracast logs` shows recent audit entries. |
 
-### TD03: Third Example App + Deployment Manual
+### TD03: Third Example App + Deployment Manual ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -444,7 +446,7 @@
 | Deliverables | `examples/blog-api/`, `docs/getting-started.md` |
 | Acceptance | 1. blog-api: 2 services + PostgreSQL + OSS. 2. Getting started guide: 5-step quickstart. 3. All 3 examples deploy successfully to Alicloud. |
 
-### TD04: Release Build + Cross-Platform Binary
+### TD04: Release Build + Cross-Platform Binary ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -456,12 +458,12 @@
 
 ### Milestone D Summary
 
-| Task | Est. | Dependencies |
-|------|------|-------------|
-| TD01 | 4h | TC05 |
-| TD02 | 2h | TC05 |
-| TD03 | 3h | TC08 |
-| TD04 | 2h | TD01 |
+| Task | Est. | Dependencies | Status |
+|------|------|-------------|--------|
+| TD01 | 4h | TC05 | ✅ Done |
+| TD02 | 2h | TC05 | ✅ Done |
+| TD03 | 3h | TC08 | ✅ Done |
+| TD04 | 2h | TD01 | ✅ Done |
 
 **Total estimate**: 11h (≈ 1.5 working days, fits Week 11-14)
 
@@ -546,9 +548,9 @@ TA01 ✅
  TC05 ─────→ TC07 ✅
  TC05 ─────→ TC08 ✅
                 │
- TC05 ─────→ TD01 → TD04
- TC05 ─────→ TD02
- TC08 ─────→ TD03
+ TC05 ─────→ TD01 ✅ → TD04 ✅
+ TC05 ─────→ TD02 ✅
+ TC08 ─────→ TD03 ✅
                 │
  TD03 ─────→ TE01 ──┐
  TD03 ─────→ TE02 ──┤
@@ -564,7 +566,7 @@ TA01 ✅
 | A | 9 (9 done) | 28h | Week 1-2 |
 | B | 10 (10 done) | 30h | Week 3-6 |
 | C | 8 (8 done) | 24h | Week 7-10 |
-| D | 4 | 11h | Week 11-14 |
+| D | 4 (4 done) | 11h | Week 11-14 |
 | E | 3 | 9h | Week 15-16 |
 | **Total** | **34** | **102h** | **16 weeks** |
 
