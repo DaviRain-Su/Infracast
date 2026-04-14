@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -79,8 +80,11 @@ func (s *AuditStore) Write(ctx context.Context, event AuditEvent) error {
 
 	detailsJSON := ""
 	if event.Details != nil {
-		// Simple JSON marshaling for details
-		detailsJSON = fmt.Sprintf("%v", event.Details)
+		// JSON marshaling for details
+		bytes, err := json.Marshal(event.Details)
+		if err == nil {
+			detailsJSON = string(bytes)
+		}
 	}
 
 	_, err := s.db.ExecContext(ctx, `

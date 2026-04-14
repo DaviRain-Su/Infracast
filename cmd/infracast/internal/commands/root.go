@@ -33,6 +33,7 @@ with minimal infrastructure configuration.`,
 	rootCmd.AddCommand(newProvisionCommand())
 	rootCmd.AddCommand(newDestroyCommand())
 	rootCmd.AddCommand(newStatusCommand())
+	rootCmd.AddCommand(newLogsCommand())
 
 	return rootCmd
 }

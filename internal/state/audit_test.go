@@ -2,12 +2,21 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// setupTestDB creates an in-memory SQLite database for testing
+func setupTestDB(t *testing.T) *sql.DB {
+	db, err := sql.Open("sqlite3", ":memory:")
+	require.NoError(t, err)
+	return db
+}
 
 // TestAuditStoreWrite validates writing audit events
 func TestAuditStoreWrite(t *testing.T) {
