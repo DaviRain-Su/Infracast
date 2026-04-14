@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/auth/credentials"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/r-kvstore"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/rds"
+	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
-	"github.com/DaviRain-Su/infracast/providers"
 )
 
 // Provider implements CloudProviderInterface for Aliyun Cloud
@@ -22,6 +23,7 @@ type Provider struct {
 	accessKeySecret string
 	rdsClient       *rds.Client
 	kvstoreClient   *r_kvstore.Client
+	vpcClient       *vpc.Client
 	ossClient       *oss.Client
 	networkCache    *networkState
 	networkMu       sync.RWMutex
@@ -31,30 +33,36 @@ type Provider struct {
 func NewProvider(region, accessKeyID, accessKeySecret string) (*Provider, error) {
 	config := sdk.NewConfig()
 	cred := credentials.NewAccessKeyCredential(accessKeyID, accessKeySecret)
-	
+
 	rdsClient, err := rds.NewClientWithOptions(region, config, cred)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RDS client: %w", err)
 	}
-	
+
 	kvstoreClient, err := r_kvstore.NewClientWithOptions(region, config, cred)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create KVStore client: %w", err)
 	}
-	
+
+	vpcClient, err := vpc.NewClientWithOptions(region, config, cred)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create VPC client: %w", err)
+	}
+
 	// OSS client uses different endpoint format
 	endpoint := fmt.Sprintf("oss-%s.aliyuncs.com", region)
 	ossClient, err := oss.New(endpoint, accessKeyID, accessKeySecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OSS client: %w", err)
 	}
-	
+
 	return &Provider{
 		region:          region,
 		accessKeyID:     accessKeyID,
 		accessKeySecret: accessKeySecret,
 		rdsClient:       rdsClient,
 		kvstoreClient:   kvstoreClient,
+		vpcClient:       vpcClient,
 		ossClient:       ossClient,
 		networkCache:    &networkState{},
 	}, nil
@@ -87,10 +95,12 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 		return nil, fmt.Errorf("RDS client not initialized")
 	}
 
-	if _, _, err := p.ensureNetwork(ctx); err != nil {
+	// Ensure default VPC/VSwitch are available for network-bound resources.
+	vpcID, vswID, err := p.ensureNetwork(ctx)
+	if err != nil {
 		return nil, err
 	}
-	
+
 	// Map engine to Aliyun engine
 	engine := spec.Engine
 	if engine == "postgresql" {
@@ -98,9 +108,10 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	} else if engine == "mysql" {
 		engine = "MySQL"
 	}
-	
-	// Create RDS instance request
+
 	request := rds.CreateCreateDBInstanceRequest()
+	request.VPCId = vpcID
+	request.VSwitchId = vswID
 	request.RegionId = p.region
 	request.Engine = engine
 	request.EngineVersion = spec.Version
@@ -115,14 +126,14 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	}
 	request.DBInstanceNetType = "Intranet"
 	request.PayType = "Postpaid" // Pay-as-you-go
-	
+
 	// Set High Availability category
 	if spec.HighAvail {
 		request.Category = "HighAvailability"
 	} else {
 		request.Category = "Basic"
 	}
-	
+
 	// Check for existing instance (idempotency)
 	describeReq := rds.CreateDescribeDBInstancesRequest()
 	describeReq.RegionId = p.region
@@ -138,13 +149,13 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 			Password:   "",
 		}, nil
 	}
-	
+
 	// Execute creation
 	response, err := p.rdsClient.CreateDBInstance(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RDS instance: %w", err)
 	}
-	
+
 	return &providers.DatabaseOutput{
 		ResourceID: response.DBInstanceId,
 		Endpoint:   "", // TODO: Poll DescribeDBInstanceAttribute to get connection string
@@ -172,10 +183,12 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 		return nil, fmt.Errorf("KVStore client not initialized")
 	}
 
-	if _, _, err := p.ensureNetwork(ctx); err != nil {
+	// Ensure default VPC/VSwitch are available for network-bound resources.
+	vpcID, vswID, err := p.ensureNetwork(ctx)
+	if err != nil {
 		return nil, err
 	}
-	
+
 	// Check for existing instance (idempotency)
 	describeReq := r_kvstore.CreateDescribeInstancesRequest()
 	describeReq.RegionId = p.region
@@ -192,14 +205,16 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 			}
 		}
 	}
-	
+
 	// Determine instance class based on memory
 	instanceClass := "redis.master.small.default"
 	if spec.MemoryMB >= 4096 {
 		instanceClass = "redis.master.mid.default"
 	}
-	
+
 	request := r_kvstore.CreateCreateInstanceRequest()
+	request.VpcId = vpcID
+	request.VSwitchId = vswID
 	request.RegionId = p.region
 	request.InstanceClass = instanceClass
 	request.InstanceType = "Redis"
@@ -207,13 +222,13 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 	if request.EngineVersion == "" {
 		request.EngineVersion = "5.0"
 	}
-	
+
 	// Execute creation
 	response, err := p.kvstoreClient.CreateInstance(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Redis instance: %w", err)
 	}
-	
+
 	return &providers.CacheOutput{
 		ResourceID: response.InstanceId,
 		Endpoint:   "", // TODO: Poll DescribeInstances to get connection domain
@@ -231,13 +246,13 @@ func (p *Provider) ProvisionObjectStorage(ctx context.Context, spec providers.Ob
 	if _, _, err := p.ensureNetwork(ctx); err != nil {
 		return nil, err
 	}
-	
+
 	// Check if bucket exists (idempotency)
 	exists, err := p.ossClient.IsBucketExist(spec.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check bucket existence: %w", err)
 	}
-	
+
 	if exists {
 		// Bucket exists, return current info
 		return &providers.ObjectStorageOutput{
@@ -247,13 +262,13 @@ func (p *Provider) ProvisionObjectStorage(ctx context.Context, spec providers.Ob
 			Region:     p.region,
 		}, nil
 	}
-	
+
 	// Create bucket
 	err = p.ossClient.CreateBucket(spec.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OSS bucket: %w", err)
 	}
-	
+
 	return &providers.ObjectStorageOutput{
 		ResourceID: spec.Name,
 		BucketName: spec.Name,
