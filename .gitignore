@@ -1,0 +1,51 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+infracast
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.txt
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Infracast specific
+infracast.yaml
+infracast.yml
+.infra/
+*.tfstate
+*.tfstate.*
+.terraform/
+terraform.plan
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp

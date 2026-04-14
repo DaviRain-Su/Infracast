@@ -1,0 +1,505 @@
+# Infracast — Task Breakdown
+
+> **Version** 1.1 · **Date** 2026-04-14 · **Status** Frozen · **Author** @CC (Tech Review)
+> **Phase**: dev-lifecycle Phase 4 (承接 Technical Spec v1.1 Frozen)
+> **Input**: PRD v1.1, Architecture v1.1, Technical Spec v1.1 (all Frozen)
+
+---
+
+## 0. Task Rules
+
+- Every task ≤ **4 hours** of implementation effort
+- Every task has a **single owner** (@kimi for code, @CC for review)
+- Every task has **acceptance criteria** (testable)
+- Dependencies are explicit: a task cannot start until its dependencies are Done
+- Task IDs are stable: `T{milestone}{sequence}` (e.g. TA01, TB03)
+
+---
+
+## 1. Milestone A — 可行性验证 (Week 1-2)
+
+> **Goal**: 给定 demo app，能生成配置并成功启动最小服务
+
+### TA01: 项目脚手架 ✅ DONE
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | None |
+| Status | **Done** (Task 1 closed, reviewed) |
+| Deliverables | CLI skeleton, config parser, provider interface, mock provider, CI, Makefile |
+| Acceptance | `make build && make test` pass. `infracast version` outputs correct info. |
+
+### TA02: State Store (SQLite)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA01 |
+| Spec Reference | Tech Spec §4 |
+| Deliverables | `internal/state/store.go`, `sqlite.go`, `record.go`, `store_test.go` |
+| Acceptance | 1. Store interface implemented with SQLite backend. 2. `UpsertResource` with optimistic locking works. 3. Concurrent update test passes (two goroutines, one succeeds, one gets ESTATE001). 4. UNIQUE index on `(env_id, resource_name)` enforced. 5. Auto-creates DB file on first Open(). |
+
+### TA03: spec_hash Computation
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | TA01 |
+| Spec Reference | Tech Spec §3.2 |
+| Deliverables | `pkg/hash/spec.go`, `pkg/hash/spec_test.go` |
+| Acceptance | 1. `SpecHash(type, spec)` returns SHA-256 hex string. 2. Same spec → same hash (deterministic). 3. Different spec → different hash. 4. Metadata changes (name, timestamps) → same hash. 5. For each resource type, only Tech Spec §3.2 listed fields are hashed. 6. Canonical JSON with sorted keys. |
+
+### TA04: Service Mapper + BuildMeta
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TA01 |
+| Spec Reference | Tech Spec §2 |
+| Deliverables | `internal/mapper/mapper.go`, `buildmeta.go`, `scanner.go`, `mapper_test.go` |
+| Acceptance | 1. `BuildMeta` struct with all 8 fields. 2. `ScanSources(dir)` detects `sqldb.NewDatabase`, `cache.NewCluster`, `objects.NewBucket` via regex. 3. `Map(config, meta)` returns `[]MappedResource` with correct defaults (Tech Spec §2.4). 4. Overrides from config are applied. 5. Topological sort: data resources (priority 10) before compute (priority 20). 6. Test with sample Encore project structure. |
+
+### TA05: Config Generator (infracfg.json)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA01 |
+| Spec Reference | Tech Spec §5 |
+| Deliverables | `internal/infragen/generator.go`, `schema.go`, `generator_test.go` |
+| Acceptance | 1. `InfraCfg` uses `map[string]` structure (not arrays). 2. JSON keys = `sql_servers`, `redis`, `object_storage` (PRD v1.1 frozen). 3. `Generate(outputs, meta)` maps resource outputs to Encore schema. 4. `Merge(base, override)` deep-merges per resource name. 5. `Write(cfg, path)` produces valid JSON with 2-space indent. 6. Empty resources → `{}` output. |
+
+### TA06: Config Parser Enhancement
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | TA01 |
+| Spec Reference | Tech Spec §1 |
+| Deliverables | Updated `internal/config/config.go`, `config_test.go` |
+| Acceptance | 1. Add `ResolveEnv(envName)` method. 2. Add `CacheOverride`, `ObjectStorageOverride` structs. 3. Region format validation (`^[a-z]{2}-[a-z]+-\d+$`). 4. Env name length limit (50 chars). 5. All 12 boundary conditions from Tech Spec §1.4 covered by tests. |
+
+### TA07: Credential Manager
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA01 |
+| Spec Reference | Tech Spec §6 |
+| Deliverables | `internal/credentials/manager.go`, `sts.go`, `direct.go`, `encrypt.go`, `manager_test.go` |
+| Acceptance | 1. `CredentialManager` interface with `GetCredentials(ctx, provider)`. 2. Direct mode: returns AK/SK from env vars. 3. STS mode: calls AssumeRole, caches token, refreshes at expiry-5min. 4. `Encrypt`/`Decrypt` with AES-256-GCM. 5. `DeriveKey` with PBKDF2 (600000 iterations). 6. Missing env vars → ECRED001/002 at init. 7. P0: only "alicloud" accepted. |
+
+### TA08: Provisioner (Core Logic)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TA02, TA03 |
+| Spec Reference | Tech Spec §3 |
+| Deliverables | `internal/provisioner/provisioner.go`, `idempotent.go`, `provisioner_test.go` |
+| Acceptance | 1. `Provision(ctx, input)` iterates resources in topological order. 2. Idempotency protocol: check state → compute hash → CREATE/UPDATE/SKIP. 3. Retry on EPROV002 (3x, exponential backoff). 4. Partial success: successful resources saved, failed in Errors. 5. DryRun mode returns plan without SDK calls. 6. Test with mock provider: create → skip (same hash) → update (different hash). |
+
+### TA09: Integration Test — Config → Map → Provision → Generate
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA02, TA03, TA04, TA05, TA06, TA08 |
+| Spec Reference | Architecture §10.2 |
+| Deliverables | `internal/deploy/pipeline_test.go` (integration test) |
+| Acceptance | 1. Full pipeline with mock provider: Load config → Scan sources → Map → Provision → Generate infracfg.json. 2. Uses SQLite `:memory:` state store. 3. Verify: resources created in state store, infracfg.json contains correct map entries, spec_hash saved. 4. Second run with same config: all resources skipped (idempotent). 5. Third run with changed config: resources updated, state_version incremented. |
+
+### Milestone A Summary
+
+| Task | Est. | Dependencies | Parallel Group |
+|------|------|-------------|----------------|
+| TA01 | 4h | — | ✅ Done |
+| TA02 | 3h | TA01 | Group 1 |
+| TA03 | 2h | TA01 | Group 1 |
+| TA04 | 4h | TA01 | Group 1 |
+| TA05 | 3h | TA01 | Group 1 |
+| TA06 | 2h | TA01 | Group 1 |
+| TA07 | 3h | TA01 | Group 1 |
+| TA08 | 4h | TA02, TA03 | Group 2 |
+| TA09 | 3h | TA02-08 | Group 3 (final) |
+
+**Critical path**: TA01 → TA02/TA03 → TA08 → TA09
+**Parallelizable**: TA02/TA03/TA04/TA05/TA06/TA07 can all start after TA01
+
+**Total estimate**: 28h (≈ 3.5 working days with parallelization, fits Week 1-2)
+
+---
+
+## 2. Milestone B — 核心供应链 (Week 3-6)
+
+> **Goal**: Alicloud 资源供应成功率 >= 95%
+
+### TB01: Alicloud Adapter — Database (RDS)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TA08 |
+| Spec Reference | Tech Spec §8 |
+| Deliverables | `providers/alicloud/database.go`, `providers/alicloud/database_test.go` |
+| Acceptance | 1. `ProvisionDatabase(ctx, spec)` creates RDS instance via Alicloud SDK. 2. Engine mapping: postgresql→"PostgreSQL", mysql→"MySQL". 3. HighAvail mapping: true→"HighAvailability", false→"Basic". 4. Returns endpoint, port, username, password. 5. Idempotent: existing instance → return current info. 6. Integration test with real Alicloud (separate CI job). |
+
+### TB02: Alicloud Adapter — Cache (Redis/Tair)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA08 |
+| Spec Reference | Tech Spec §8 |
+| Deliverables | `providers/alicloud/cache.go`, `providers/alicloud/cache_test.go` |
+| Acceptance | 1. `ProvisionCache(ctx, spec)` creates Redis instance. 2. MemoryMB mapping. 3. Returns endpoint, port, password. 4. Idempotent. |
+
+### TB03: Alicloud Adapter — Object Storage (OSS)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA08 |
+| Spec Reference | Tech Spec §8 |
+| Deliverables | `providers/alicloud/storage.go`, `providers/alicloud/storage_test.go` |
+| Acceptance | 1. `ProvisionObjectStorage(ctx, spec)` creates OSS bucket. 2. ACL mapping. 3. CORS rules applied. 4. Returns bucket name, endpoint, region. 5. Bucket name already taken → EPROV003 with clear message. |
+
+### TB04: Alicloud Adapter — STS/AssumeRole Integration
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA07, TB01 |
+| Spec Reference | Tech Spec §6 |
+| Deliverables | Updated `internal/credentials/sts.go`, integration test |
+| Acceptance | 1. STS AssumeRole with real Alicloud credentials. 2. Temporary token used for RDS/OSS/Redis creation. 3. Token refresh before expiry. 4. Scoped IAM policy test (minimum privilege). |
+
+### TB05: Alicloud Adapter — Provider Registration + VPC/VSwitch Auto-Setup
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TB01 |
+| Spec Reference | Tech Spec §8.3 BC-4 |
+| Deliverables | `providers/alicloud/register.go`, `providers/alicloud/provider.go`, `providers/alicloud/network.go` |
+| Acceptance | 1. `init()` registers AlicloudProvider. 2. First deploy auto-creates default VPC + VSwitch if not exists. 3. VPC/VSwitch IDs cached in state for reuse. |
+
+### TB06: End-to-End Provisioning Test
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TB01-TB05 |
+| Deliverables | Integration test suite |
+| Acceptance | 1. Create RDS + Redis + OSS with real Alicloud. 2. Verify all resources accessible. 3. Second run: all skipped (idempotent). 4. Modify spec: resources updated. 5. Cleanup: destroy all resources. 6. Success rate tracking (target >= 95%). |
+
+### Milestone B Summary
+
+| Task | Est. | Dependencies | Parallel Group |
+|------|------|-------------|----------------|
+| TB01 | 4h | TA08 | Group 1 |
+| TB02 | 3h | TA08 | Group 1 |
+| TB03 | 3h | TA08 | Group 1 |
+| TB04 | 3h | TA07, TB01 | Group 2 |
+| TB05 | 3h | TB01 | Group 2 |
+| TB06 | 4h | TB01-05 | Group 3 (final) |
+
+**Total estimate**: 20h (≈ 2.5 working days with parallelization, fits Week 3-6)
+
+---
+
+## 3. Milestone C — 部署链路闭环 (Week 7-10)
+
+> **Goal**: 2 个示例 app + 1 条迁移变更可复现上线
+
+### TC01: Deploy Pipeline — Step 1 Build (encore build)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA04 |
+| Spec Reference | Tech Spec §7.3 Step 1 |
+| Deliverables | `internal/deploy/build.go`, `build_test.go` |
+| Acceptance | 1. Execute `encore build docker <tag>`. 2. Parse output for image tag. 3. Extract BuildMeta. 4. Timeout 5 min. 5. EDEPLOY001 on failure. |
+
+### TC02: Deploy Pipeline — Step 5 Deploy (ACR + K8s)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TB05 |
+| Spec Reference | Tech Spec §7.3 Step 5 |
+| Deliverables | `internal/deploy/docker.go`, `internal/deploy/k8s.go` |
+| Acceptance | 1. Push image to ACR (with retry 3x). 2. Generate K8s Deployment + Service YAML (matching Tech Spec template). 3. Create ConfigMap from infracfg.json. 4. Apply to ACK Serverless namespace. 5. Labels include `infracast.dev/env` and `infracast.dev/commit`. |
+
+### TC03: Deploy Pipeline — Step 6 Verify (Health Check)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | TC02 |
+| Spec Reference | Tech Spec §7.3 Step 6 |
+| Deliverables | `internal/deploy/health.go`, `health_test.go` |
+| Acceptance | 1. Poll K8s Deployment status every 10s. 2. Timeout 5 min. 3. On timeout: `kubectl rollout undo`. 4. EDEPLOY050 on failure. |
+
+### TC04: Deploy Pipeline — Rollback
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | TC03 |
+| Spec Reference | Tech Spec §7.4 + §7.5 |
+| Deliverables | `internal/deploy/rollback.go`, `rollback_test.go` |
+| Acceptance | 1. K8s rollout undo on verify failure. 2. Forward-only: never execute destructive DDL. 3. Rollback itself fails → status "failed" (not "rolled_back"). 4. First deploy with no previous revision → status "failed". |
+
+### TC05: Deploy Pipeline — Full Orchestrator
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TC01-TC04, TA09 |
+| Spec Reference | Tech Spec §7.1, §7.2 |
+| Deliverables | `internal/deploy/pipeline.go` |
+| Acceptance | 1. `Pipeline.Execute(ctx, input)` runs all 7 steps. 2. Step results tracked. 3. Context cancellation (Ctrl+C) handled gracefully. 4. Exit codes per Tech Spec §9.3. 5. `--verbose` logs each step. |
+
+### TC06: `infracast run` — Local Development
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TA05 |
+| Deliverables | Updated `cmd/infracast/internal/commands/run.go` |
+| Acceptance | 1. `infracast run` starts local Encore dev environment. 2. Generates local infracfg.json pointing to localhost DB/Redis. 3. Env vars match cloud deploy (INFRACFG_PATH). |
+
+### TC07: Notification (Feishu + DingTalk)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | TC05 |
+| Spec Reference | Tech Spec §7.3 Step 7 |
+| Deliverables | `internal/notify/notifier.go`, `feishu.go`, `dingtalk.go`, `notify_test.go` |
+| Acceptance | 1. Feishu webhook POST. 2. DingTalk webhook POST. 3. Non-blocking (10s timeout, failure logged only). 4. Empty notification config → skip. |
+
+### TC08: Example Apps (2 apps + 1 migration)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TC05 |
+| Deliverables | `examples/hello-world/`, `examples/todo-app/` |
+| Acceptance | 1. hello-world: 1 service, 0 resources. Deploys to ACK Serverless. 2. todo-app: 1 service + 1 PostgreSQL + 1 Redis. Deploys with full provisioning. 3. todo-app has migration_001.sql. Deploy v2 with migration_002.sql succeeds (forward-only). |
+
+### Milestone C Summary
+
+| Task | Est. | Dependencies |
+|------|------|-------------|
+| TC01 | 3h | TA04 |
+| TC02 | 4h | TB05 |
+| TC03 | 2h | TC02 |
+| TC04 | 2h | TC03 |
+| TC05 | 4h | TC01-04, TA09 |
+| TC06 | 3h | TA05 |
+| TC07 | 2h | TC05 |
+| TC08 | 4h | TC05 |
+
+**Total estimate**: 24h (≈ 3 working days, fits Week 7-10)
+
+---
+
+## 4. Milestone D — 最小产品化 (Week 11-14)
+
+> **Goal**: CLI 发布 + 3 个示例应用在阿里云可重复部署
+
+### TD01: CLI Polish (init / env / deploy UX)
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 4h |
+| Dependencies | TC05 |
+| Deliverables | Updated CLI commands with error messages, help text, progress indicators |
+| Acceptance | 1. `infracast init` creates `infracast.yaml` + scaffold. 2. `infracast env create/list/destroy` works end-to-end. 3. `infracast deploy` shows progress bar/spinner. 4. All error codes display suggested fix. |
+
+### TD02: Audit Logging
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | TC05 |
+| Deliverables | `internal/state/audit.go`, `audit_test.go` |
+| Acceptance | 1. Append-only audit log table (SQLite). 2. Every deploy/provision action logged. 3. `infracast logs` shows recent audit entries. |
+
+### TD03: Third Example App + Deployment Manual
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 3h |
+| Dependencies | TC08 |
+| Deliverables | `examples/blog-api/`, `docs/getting-started.md` |
+| Acceptance | 1. blog-api: 2 services + PostgreSQL + OSS. 2. Getting started guide: 5-step quickstart. 3. All 3 examples deploy successfully to Alicloud. |
+
+### TD04: Release Build + Cross-Platform Binary
+
+| Field | Value |
+|-------|-------|
+| Owner | @kimi |
+| Estimate | 2h |
+| Dependencies | TD01 |
+| Deliverables | Updated Makefile, `.github/workflows/release.yml` |
+| Acceptance | 1. `make release` produces macOS (arm64, amd64) + Linux (amd64) binaries. 2. GitHub Release workflow on tag push. 3. Version info correctly injected. |
+
+### Milestone D Summary
+
+| Task | Est. | Dependencies |
+|------|------|-------------|
+| TD01 | 4h | TC05 |
+| TD02 | 2h | TC05 |
+| TD03 | 3h | TC08 |
+| TD04 | 2h | TD01 |
+
+**Total estimate**: 11h (≈ 1.5 working days, fits Week 11-14)
+
+---
+
+## 5. Milestone E — Gate + 兼容复盘 (Week 15-16)
+
+> **Goal**: 接口冻结确认 + Phase 2 入口决策
+
+### TE01: Failure Rate Analysis
+
+| Field | Value |
+|-------|-------|
+| Owner | @CC |
+| Estimate | 4h |
+| Dependencies | TD03 |
+| Deliverables | `docs/milestone-e-report.md` |
+| Acceptance | 1. Run all 3 examples 5x each. Track success/failure. 2. Resource provisioning success rate >= 95%. 3. Deploy success rate >= 90%. 4. Document all failure modes encountered. |
+
+### TE02: Interface Freeze Audit
+
+| Field | Value |
+|-------|-------|
+| Owner | @CC |
+| Estimate | 3h |
+| Dependencies | TD03 |
+| Deliverables | Updated `docs/milestone-e-report.md` |
+| Acceptance | 1. Compare implemented interfaces against Tech Spec §12 freeze list. 2. Any deviations documented with rationale. 3. Freeze list updated if needed (requires team approval). |
+
+### TE03: Phase 2 Gate Decision
+
+| Field | Value |
+|-------|-------|
+| Owner | @davirain + @CC + @codex_ |
+| Estimate | 2h |
+| Dependencies | TE01, TE02 |
+| Deliverables | Gate decision document |
+| Acceptance | 1. Risk Gates (PRD §13) all evaluated. 2. Go/No-Go decision for Phase 2 (multi-cloud + Pub/Sub). 3. Scope adjustments documented. |
+
+### Milestone E Summary
+
+| Task | Est. | Dependencies |
+|------|------|-------------|
+| TE01 | 4h | TD03 |
+| TE02 | 3h | TD03 |
+| TE03 | 2h | TE01, TE02 |
+
+**Total estimate**: 9h (≈ 1 working day, fits Week 15-16)
+
+---
+
+## 6. Full Dependency Graph
+
+```
+TA01 (Done)
+ ├── TA02 ──┐
+ ├── TA03 ──┤
+ ├── TA04 ──┤
+ ├── TA05 ──┤
+ ├── TA06 ──┤
+ └── TA07 ──┤
+            │
+ TA02+TA03 → TA08
+            │
+ TA02-08 ──→ TA09
+            │
+ TA08 ─────→ TB01 ──┐
+ TA08 ─────→ TB02 ──┤
+ TA08 ─────→ TB03 ──┤
+ TA07+TB01 → TB04 ──┤
+ TB01 ─────→ TB05 ──┤
+            └──────→ TB06
+                      │
+ TA04 ─────→ TC01 ──┐
+ TB05 ─────→ TC02 ──┤
+ TC02 ─────→ TC03 ──┤
+ TC03 ─────→ TC04 ──┤
+ TC01-04+TA09 → TC05
+ TA05 ─────→ TC06
+ TC05 ─────→ TC07
+ TC05 ─────→ TC08
+                │
+ TC05 ─────→ TD01 → TD04
+ TC05 ─────→ TD02
+ TC08 ─────→ TD03
+                │
+ TD03 ─────→ TE01 ──┐
+ TD03 ─────→ TE02 ──┤
+            └──────→ TE03
+```
+
+---
+
+## 7. Grand Total
+
+| Milestone | Tasks | Hours | Calendar (parallel) |
+|-----------|-------|-------|-------------------|
+| A | 9 (1 done) | 28h | Week 1-2 |
+| B | 6 | 20h | Week 3-6 |
+| C | 8 | 24h | Week 7-10 |
+| D | 4 | 11h | Week 11-14 |
+| E | 3 | 9h | Week 15-16 |
+| **Total** | **30** | **92h** | **16 weeks** |
+
+---
+
+## Acceptance Criteria (Phase 4)
+
+- [ ] Every task ≤ 4 hours
+- [ ] Dependencies are explicit and acyclic
+- [ ] Acceptance criteria are testable (not subjective)
+- [ ] All Tech Spec modules have corresponding tasks
+- [ ] Milestone goals match PRD v1.1 §10
+- [ ] Critical path identified
+
+---
+
+*— End of Document —*
+
+*Infracast Task Breakdown v1.1 (Frozen) | Phase 4 of dev-lifecycle | Confidential*
