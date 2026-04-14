@@ -4,7 +4,21 @@ This directory contains example applications demonstrating Infracast deployment 
 
 ## Applications
 
-### 1. api-app (REST API Service)
+### 1. hello-world (Zero Resources)
+
+The simplest possible Infracast application demonstrating:
+- **Zero cloud resources** (no database, cache, or storage)
+- Basic HTTP service with Encore
+- Health check endpoint
+- Perfect for onboarding and first deployment
+
+**Endpoints:**
+- `GET /hello` - Returns greeting message
+- `GET /health` - Health check
+
+**Resources:** None (build → deploy only)
+
+### 2. todo-app (REST API Service)
 
 A simple REST API demonstrating:
 - Database integration (PostgreSQL via `sqldb.NewDatabase`)
@@ -22,7 +36,7 @@ A simple REST API demonstrating:
 - Database: `users` (PostgreSQL)
 - Cache: `session` (Redis)
 
-### 2. web-app (Web Frontend)
+### 3. web-app (Web Frontend)
 
 A web frontend demonstrating:
 - Object storage integration (OSS via `objects.NewBucket`)
@@ -38,7 +52,7 @@ A web frontend demonstrating:
 **Resources:**
 - Object Storage: `assets` (OSS)
 
-### 3. migration (Database Migrations)
+### 4. migration (Database Migrations)
 
 Example database migrations demonstrating:
 - Forward-only migration strategy
@@ -54,11 +68,15 @@ Example database migrations demonstrating:
 Deploy these examples with Infracast:
 
 ```bash
-# Deploy api-app
-cd api-app
+# Deploy hello-world (zero resources)
+cd hello-world
 infracast deploy --env staging
 
-# Deploy web-app
+# Deploy todo-app (with database + cache)
+cd todo-app
+infracast deploy --env staging
+
+# Deploy web-app (with object storage)
 cd web-app
 infracast deploy --env staging
 
@@ -75,23 +93,25 @@ Run locally with Infracast:
 infracast run
 
 # Or with specific app
-cd api-app
+cd hello-world
 infracast run
 ```
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│   api-app       │     │   web-app       │
-│   (REST API)    │     │   (Web Frontend)│
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-    ┌────┴────┐             ┌────┴────┐
-    │         │             │         │
-┌───▼───┐ ┌───▼───┐     ┌───▼───┐ ┌───▼────┐
-│PostgreSQL│ │ Redis │     │  OSS  │ │  CDN   │
-└─────────┘ └───────┘     └───────┘ └────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  hello-world    │     │   todo-app      │     │   web-app       │
+│ (Zero Resources)│     │   (REST API)    │     │   (Web Frontend)│
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         │                  ┌────┴────┐             ┌────┴────┐
+         │                  │         │             │         │
+         │              ┌───▼───┐ ┌───▼───┐     ┌───▼───┐ ┌───▼────┐
+         │              │PostgreSQL│ │ Redis │     │  OSS  │ │  CDN   │
+         │              └─────────┘ └───────┘     └───────┘ └────────┘
+         │
+    No external resources needed
 ```
 
 ## Notes
@@ -100,3 +120,4 @@ infracast run
 - Resources are provisioned automatically by Infracast
 - Configuration is generated in `infracfg.json`
 - Forward-only migrations ensure safe deployments
+- **hello-world** requires no cloud resources - perfect for first deployment
