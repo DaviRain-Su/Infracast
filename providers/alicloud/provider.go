@@ -10,6 +10,7 @@ import (
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/r-kvstore"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/rds"
+	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/DaviRain-Su/infracast/providers"
 )
 
@@ -20,6 +21,7 @@ type Provider struct {
 	accessKeySecret string
 	rdsClient       *rds.Client
 	kvstoreClient   *r_kvstore.Client
+	ossClient       *oss.Client
 }
 
 // NewProvider creates a new AliCloud provider instance
@@ -37,12 +39,20 @@ func NewProvider(region, accessKeyID, accessKeySecret string) (*Provider, error)
 		return nil, fmt.Errorf("failed to create KVStore client: %w", err)
 	}
 	
+	// OSS client uses different endpoint format
+	endpoint := fmt.Sprintf("oss-%s.aliyuncs.com", region)
+	ossClient, err := oss.New(endpoint, accessKeyID, accessKeySecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OSS client: %w", err)
+	}
+	
 	return &Provider{
 		region:          region,
 		accessKeyID:     accessKeyID,
 		accessKeySecret: accessKeySecret,
 		rdsClient:       rdsClient,
 		kvstoreClient:   kvstoreClient,
+		ossClient:       ossClient,
 	}, nil
 }
 
@@ -154,6 +164,23 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 		return nil, fmt.Errorf("KVStore client not initialized")
 	}
 	
+	// Check for existing instance (idempotency)
+	describeReq := r_kvstore.CreateDescribeInstancesRequest()
+	describeReq.RegionId = p.region
+	if describeResp, err := p.kvstoreClient.DescribeInstances(describeReq); err == nil {
+		for _, inst := range describeResp.Instances.KVStoreInstance {
+			if inst.InstanceName == spec.Name {
+				// Instance exists, return current info
+				return &providers.CacheOutput{
+					ResourceID: inst.InstanceId,
+					Endpoint:   inst.ConnectionDomain,
+					Port:       6379,
+					Password:   "",
+				}, nil
+			}
+		}
+	}
+	
 	// Determine instance class based on memory
 	instanceClass := "redis.master.small.default"
 	if spec.MemoryMB >= 4096 {
@@ -177,15 +204,46 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 	
 	return &providers.CacheOutput{
 		ResourceID: response.InstanceId,
-		Endpoint:   "", // Will be populated after instance is ready
+		Endpoint:   "", // TODO: Poll DescribeInstances to get connection domain
 		Port:       6379,
-		Password:   "", // Should be retrieved after creation
+		Password:   "", // TODO: Retrieve after creation
 	}, nil
 }
 
-// ProvisionObjectStorage creates an OSS bucket (placeholder)
+// ProvisionObjectStorage creates an OSS bucket
 func (p *Provider) ProvisionObjectStorage(ctx context.Context, spec providers.ObjectStorageSpec) (*providers.ObjectStorageOutput, error) {
-	return nil, fmt.Errorf("object storage provisioning not yet implemented")
+	if p.ossClient == nil {
+		return nil, fmt.Errorf("OSS client not initialized")
+	}
+	
+	// Check if bucket exists (idempotency)
+	exists, err := p.ossClient.IsBucketExist(spec.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check bucket existence: %w", err)
+	}
+	
+	if exists {
+		// Bucket exists, return current info
+		return &providers.ObjectStorageOutput{
+			ResourceID: spec.Name,
+			BucketName: spec.Name,
+			Endpoint:   fmt.Sprintf("%s.oss-%s.aliyuncs.com", spec.Name, p.region),
+			Region:     p.region,
+		}, nil
+	}
+	
+	// Create bucket
+	err = p.ossClient.CreateBucket(spec.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OSS bucket: %w", err)
+	}
+	
+	return &providers.ObjectStorageOutput{
+		ResourceID: spec.Name,
+		BucketName: spec.Name,
+		Endpoint:   fmt.Sprintf("%s.oss-%s.aliyuncs.com", spec.Name, p.region),
+		Region:     p.region,
+	}, nil
 }
 
 // ProvisionCompute creates a compute resource (placeholder)

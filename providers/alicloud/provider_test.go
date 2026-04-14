@@ -80,18 +80,19 @@ func TestProvider_ProvisionCache(t *testing.T) {
 	assert.Contains(t, err.Error(), "not initialized")
 }
 
-// TestProvider_ProvisionObjectStorage_NotImplemented validates placeholder
-func TestProvider_ProvisionObjectStorage_NotImplemented(t *testing.T) {
-	p := &Provider{}
+// TestProvider_ProvisionObjectStorage validates object storage provisioning
+func TestProvider_ProvisionObjectStorage(t *testing.T) {
+	p := &Provider{region: "cn-hangzhou"}
 	
 	spec := providers.ObjectStorageSpec{
 		Name: "testbucket",
 		ACL:  "private",
 	}
 	
+	// Should fail because client is nil
 	_, err := p.ProvisionObjectStorage(nil, spec)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.Contains(t, err.Error(), "not initialized")
 }
 
 // TestProvider_ProvisionCompute_NotImplemented validates placeholder
