@@ -4,7 +4,7 @@ bin/
 *.dll
 *.so
 *.dylib
-infracast
+/infracast
 
 # Test binary, built with `go test -c`
 *.test

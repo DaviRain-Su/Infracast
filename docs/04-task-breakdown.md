@@ -33,62 +33,67 @@
 | Deliverables | CLI skeleton, config parser, provider interface, mock provider, CI, Makefile |
 | Acceptance | `make build && make test` pass. `infracast version` outputs correct info. |
 
-### TA02: State Store (SQLite)
+### TA02: State Store (SQLite) ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 3h |
 | Dependencies | TA01 |
+| Status | **Done** |
 | Spec Reference | Tech Spec §4 |
 | Deliverables | `internal/state/store.go`, `sqlite.go`, `record.go`, `store_test.go` |
 | Acceptance | 1. Store interface implemented with SQLite backend. 2. `UpsertResource` with optimistic locking works. 3. Concurrent update test passes (two goroutines, one succeeds, one gets ESTATE001). 4. UNIQUE index on `(env_id, resource_name)` enforced. 5. Auto-creates DB file on first Open(). |
 
-### TA03: spec_hash Computation
+### TA03: spec_hash Computation ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 2h |
 | Dependencies | TA01 |
+| Status | **Done** |
 | Spec Reference | Tech Spec §3.2 |
 | Deliverables | `pkg/hash/spec.go`, `pkg/hash/spec_test.go` |
 | Acceptance | 1. `SpecHash(type, spec)` returns SHA-256 hex string. 2. Same spec → same hash (deterministic). 3. Different spec → different hash. 4. Metadata changes (name, timestamps) → same hash. 5. For each resource type, only Tech Spec §3.2 listed fields are hashed. 6. Canonical JSON with sorted keys. |
 
-### TA04: Service Mapper + BuildMeta
+### TA04: Service Mapper + BuildMeta ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 4h |
 | Dependencies | TA01 |
+| Status | **Done** |
 | Spec Reference | Tech Spec §2 |
 | Deliverables | `internal/mapper/mapper.go`, `buildmeta.go`, `scanner.go`, `mapper_test.go` |
 | Acceptance | 1. `BuildMeta` struct with all 8 fields. 2. `ScanSources(dir)` detects `sqldb.NewDatabase`, `cache.NewCluster`, `objects.NewBucket` via regex. 3. `Map(config, meta)` returns `[]MappedResource` with correct defaults (Tech Spec §2.4). 4. Overrides from config are applied. 5. Topological sort: data resources (priority 10) before compute (priority 20). 6. Test with sample Encore project structure. |
 
-### TA05: Config Generator (infracfg.json)
+### TA05: Config Generator (infracfg.json) ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 3h |
 | Dependencies | TA01 |
+| Status | **Done** |
 | Spec Reference | Tech Spec §5 |
 | Deliverables | `internal/infragen/generator.go`, `schema.go`, `generator_test.go` |
 | Acceptance | 1. `InfraCfg` uses `map[string]` structure (not arrays). 2. JSON keys = `sql_servers`, `redis`, `object_storage` (PRD v1.1 frozen). 3. `Generate(outputs, meta)` maps resource outputs to Encore schema. 4. `Merge(base, override)` deep-merges per resource name. 5. `Write(cfg, path)` produces valid JSON with 2-space indent. 6. Empty resources → `{}` output. |
 
-### TA06: Config Parser Enhancement
+### TA06: Config Parser Enhancement ✅ DONE
 
 | Field | Value |
 |-------|-------|
 | Owner | @kimi |
 | Estimate | 2h |
 | Dependencies | TA01 |
+| Status | **Done** |
 | Spec Reference | Tech Spec §1 |
 | Deliverables | Updated `internal/config/config.go`, `config_test.go` |
 | Acceptance | 1. Add `ResolveEnv(envName)` method. 2. Add `CacheOverride`, `ObjectStorageOverride` structs. 3. Region format validation (`^[a-z]{2}-[a-z]+-\d+$`). 4. Env name length limit (50 chars). 5. All 12 boundary conditions from Tech Spec §1.4 covered by tests. |
 
-### TA07: Credential Manager
+### TA07: Credential Manager ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -99,7 +104,7 @@
 | Deliverables | `internal/credentials/manager.go`, `sts.go`, `direct.go`, `encrypt.go`, `manager_test.go` |
 | Acceptance | 1. `CredentialManager` interface with `GetCredentials(ctx, provider)`. 2. Direct mode: returns AK/SK from env vars. 3. STS mode: calls AssumeRole, caches token, refreshes at expiry-5min. 4. `Encrypt`/`Decrypt` with AES-256-GCM. 5. `DeriveKey` with PBKDF2 (600000 iterations). 6. Missing env vars → ECRED001/002 at init. 7. P0: only "alicloud" accepted. |
 
-### TA08: Provisioner (Core Logic)
+### TA08: Provisioner (Core Logic) ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -110,7 +115,7 @@
 | Deliverables | `internal/provisioner/provisioner.go`, `idempotent.go`, `provisioner_test.go` |
 | Acceptance | 1. `Provision(ctx, input)` iterates resources in topological order. 2. Idempotency protocol: check state → compute hash → CREATE/UPDATE/SKIP. 3. Retry on EPROV002 (3x, exponential backoff). 4. Partial success: successful resources saved, failed in Errors. 5. DryRun mode returns plan without SDK calls. 6. Test with mock provider: create → skip (same hash) → update (different hash). |
 
-### TA09: Integration Test — Config → Map → Provision → Generate
+### TA09: Integration Test — Config → Map → Provision → Generate ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -123,17 +128,17 @@
 
 ### Milestone A Summary
 
-| Task | Est. | Dependencies | Parallel Group |
-|------|------|-------------|----------------|
-| TA01 | 4h | — | ✅ Done |
-| TA02 | 3h | TA01 | Group 1 |
-| TA03 | 2h | TA01 | Group 1 |
-| TA04 | 4h | TA01 | Group 1 |
-| TA05 | 3h | TA01 | Group 1 |
-| TA06 | 2h | TA01 | Group 1 |
-| TA07 | 3h | TA01 | Group 1 |
-| TA08 | 4h | TA02, TA03 | Group 2 |
-| TA09 | 3h | TA02-08 | Group 3 (final) |
+| Task | Est. | Dependencies | Parallel Group | Status |
+|------|------|-------------|----------------|--------|
+| TA01 | 4h | — | Group 0 | ✅ Done |
+| TA02 | 3h | TA01 | Group 1 | ✅ Done |
+| TA03 | 2h | TA01 | Group 1 | ✅ Done |
+| TA04 | 4h | TA01 | Group 1 | ✅ Done |
+| TA05 | 3h | TA01 | Group 1 | ✅ Done |
+| TA06 | 2h | TA01 | Group 1 | ✅ Done |
+| TA07 | 3h | TA01 | Group 1 | ✅ Done |
+| TA08 | 4h | TA02, TA03 | Group 2 | ✅ Done |
+| TA09 | 3h | TA02-08 | Group 3 (final) | ✅ Done |
 
 **Critical path**: TA01 → TA02/TA03 → TA08 → TA09
 **Parallelizable**: TA02/TA03/TA04/TA05/TA06/TA07 can all start after TA01
@@ -147,7 +152,7 @@
 > **Goal**: 完成 CLI 用户交互入口，为后续 Provider Adapter 和部署链路提供命令行骨架
 > **Priority change**: 2026-04-15 经 @davirain 确认，CLI 先行于 Provider Adapter 执行
 
-### B2.1: CLI Framework Setup
+### B2.1: CLI Framework Setup ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -157,7 +162,7 @@
 | Deliverables | CLI framework with cobra/urfave, subcommand routing, help text |
 | Acceptance | 1. CLI binary with `init`, `deploy`, `destroy`, `status` subcommands registered. 2. `--help` output for each command. 3. Global flags: `--config`, `--env`, `--verbose`. |
 
-### B2.2: Provision Command
+### B2.2: Provision Command ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -167,7 +172,7 @@
 | Deliverables | `cmd/infracast/internal/commands/provision.go` |
 | Acceptance | 1. `infracast deploy` loads config, runs provision pipeline. 2. Connects to provisioner core (TA08). 3. Progress output. 4. Exit codes per Tech Spec §9.3. |
 
-### B2.3: Destroy Command
+### B2.3: Destroy Command ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -177,7 +182,7 @@
 | Deliverables | `cmd/infracast/internal/commands/destroy.go` |
 | Acceptance | 1. `infracast destroy` tears down resources. 2. Confirmation prompt (skip with `--yes`). 3. Idempotent: destroying non-existent resources is a no-op. |
 
-### B2.4: Status Command
+### B2.4: Status Command ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -189,12 +194,12 @@
 
 ### Milestone B-CLI Summary
 
-| Task | Est. | Dependencies | Parallel Group |
-|------|------|-------------|----------------|
-| B2.1 | 3h | TA01 | Group 1 |
-| B2.2 | 3h | B2.1, TA08 | Group 2 |
-| B2.3 | 2h | B2.1, TA08 | Group 2 |
-| B2.4 | 2h | B2.1, TA02 | Group 2 |
+| Task | Est. | Dependencies | Parallel Group | Status |
+|------|------|-------------|----------------|--------|
+| B2.1 | 3h | TA01 | Group 1 | ✅ Done |
+| B2.2 | 3h | B2.1, TA08 | Group 2 | ✅ Done |
+| B2.3 | 2h | B2.1, TA08 | Group 2 | ✅ Done |
+| B2.4 | 2h | B2.1, TA02 | Group 2 | ✅ Done |
 
 **Total estimate**: 10h (≈ 1.5 working days)
 **Note**: B2.2/B2.3/B2.4 可并行开发
@@ -206,7 +211,7 @@
 > **Goal**: Alicloud 资源供应成功率 >= 95%
 > **Note**: 原 Milestone B，经 2026-04-15 优先级调整后顺延至 B-CLI 完成后执行
 
-### TB01: Alicloud Adapter — Database (RDS)
+### TB01: Alicloud Adapter — Database (RDS) ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -217,7 +222,7 @@
 | Deliverables | `providers/alicloud/database.go`, `providers/alicloud/database_test.go` |
 | Acceptance | 1. `ProvisionDatabase(ctx, spec)` creates RDS instance via Alicloud SDK. 2. Engine mapping: postgresql→"PostgreSQL", mysql→"MySQL". 3. HighAvail mapping: true→"HighAvailability", false→"Basic". 4. Returns endpoint, port, username, password. 5. Idempotent: existing instance → return current info. 6. Integration test with real Alicloud (separate CI job). |
 
-### TB02: Alicloud Adapter — Cache (Redis/Tair)
+### TB02: Alicloud Adapter — Cache (Redis/Tair) ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -228,7 +233,7 @@
 | Deliverables | `providers/alicloud/cache.go`, `providers/alicloud/cache_test.go` |
 | Acceptance | 1. `ProvisionCache(ctx, spec)` creates Redis instance. 2. MemoryMB mapping. 3. Returns endpoint, port, password. 4. Idempotent. |
 
-### TB03: Alicloud Adapter — Object Storage (OSS)
+### TB03: Alicloud Adapter — Object Storage (OSS) ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -239,7 +244,7 @@
 | Deliverables | `providers/alicloud/storage.go`, `providers/alicloud/storage_test.go` |
 | Acceptance | 1. `ProvisionObjectStorage(ctx, spec)` creates OSS bucket. 2. ACL mapping. 3. CORS rules applied. 4. Returns bucket name, endpoint, region. 5. Bucket name already taken → EPROV003 with clear message. |
 
-### TB04: Alicloud Adapter — STS/AssumeRole Integration
+### TB04: Alicloud Adapter — STS/AssumeRole Integration ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -250,7 +255,7 @@
 | Deliverables | Updated `internal/credentials/sts.go`, integration test |
 | Acceptance | 1. STS AssumeRole with real Alicloud credentials. 2. Temporary token used for RDS/OSS/Redis creation. 3. Token refresh before expiry. 4. Scoped IAM policy test (minimum privilege). |
 
-### TB05: Alicloud Adapter — Provider Registration + VPC/VSwitch Auto-Setup
+### TB05: Alicloud Adapter — Provider Registration + VPC/VSwitch Auto-Setup ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -261,7 +266,7 @@
 | Deliverables | `providers/alicloud/register.go`, `providers/alicloud/provider.go`, `providers/alicloud/network.go` |
 | Acceptance | 1. `init()` registers AlicloudProvider. 2. First deploy auto-creates default VPC + VSwitch if not exists. 3. VPC/VSwitch IDs cached in state for reuse. |
 
-### TB06: End-to-End Provisioning Test
+### TB06: End-to-End Provisioning Test ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -273,14 +278,14 @@
 
 ### Milestone B-Provider Summary
 
-| Task | Est. | Dependencies | Parallel Group |
-|------|------|-------------|----------------|
-| TB01 | 4h | TA08 | Group 1 |
-| TB02 | 3h | TA08 | Group 1 |
-| TB03 | 3h | TA08 | Group 1 |
-| TB04 | 3h | TA07, TB01 | Group 2 |
-| TB05 | 3h | TB01 | Group 2 |
-| TB06 | 4h | TB01-05 | Group 3 (final) |
+| Task | Est. | Dependencies | Parallel Group | Status |
+|------|------|-------------|----------------|--------|
+| TB01 | 4h | TA08 | Group 1 | ✅ Done |
+| TB02 | 3h | TA08 | Group 1 | ✅ Done |
+| TB03 | 3h | TA08 | Group 1 | ✅ Done |
+| TB04 | 3h | TA07, TB01 | Group 2 | ✅ Done |
+| TB05 | 3h | TB01 | Group 2 | ✅ Done |
+| TB06 | 4h | TB01-05 | Group 3 (final) | ✅ Done |
 
 **Total estimate**: 20h (≈ 2.5 working days with parallelization, fits Week 3-6)
 
@@ -499,25 +504,27 @@
 ## 6. Full Dependency Graph
 
 ```
-TA01 (Done)
- ├── TA02 ──┐
- ├── TA03 ──┤
- ├── TA04 ──┤
- ├── TA05 ──┤
- ├── TA06 ──┤
- └── TA07 ──┤
-            │
- TA02+TA03 → TA08
-            │
- TA02-08 ──→ TA09
-            │
- TA08 ─────→ TB01 ──┐
- TA08 ─────→ TB02 ──┤
- TA08 ─────→ TB03 ──┤
- TA07+TB01 → TB04 ──┤
- TB01 ─────→ TB05 ──┤
-            └──────→ TB06
-                      │
+TA01 ✅
+ ├── TA02 ✅ ─┐
+ ├── TA03 ✅ ─┤
+ ├── TA04 ✅ ─┤
+ ├── TA05 ✅ ─┤
+ ├── TA06 ✅ ─┤
+ └── TA07 ✅ ─┤
+              │
+ TA02+TA03 → TA08 ✅
+              │
+ TA02-08 ──→ TA09 ✅
+              │
+ TA01 ─────→ B2.1 ✅ → B2.2 ✅, B2.3 ✅, B2.4 ✅
+              │
+ TA08 ─────→ TB01 ✅ ─┐
+ TA08 ─────→ TB02 ✅ ─┤
+ TA08 ─────→ TB03 ✅ ─┤
+ TA07+TB01 → TB04 ✅ ─┤
+ TB01 ─────→ TB05 ✅ ─┤
+              └──────→ TB06 ✅
+                        │
  TA04 ─────→ TC01 ──┐
  TB05 ─────→ TC02 ──┤
  TC02 ─────→ TC03 ──┤
@@ -533,7 +540,7 @@ TA01 (Done)
                 │
  TD03 ─────→ TE01 ──┐
  TD03 ─────→ TE02 ──┤
-            └──────→ TE03
+              └────→ TE03
 ```
 
 ---
@@ -542,8 +549,8 @@ TA01 (Done)
 
 | Milestone | Tasks | Hours | Calendar (parallel) |
 |-----------|-------|-------|-------------------|
-| A | 9 (1 done) | 28h | Week 1-2 |
-| B | 6 | 20h | Week 3-6 |
+| A | 9 (9 done) | 28h | Week 1-2 |
+| B | 10 (10 done) | 30h | Week 3-6 |
 | C | 8 | 24h | Week 7-10 |
 | D | 4 | 11h | Week 11-14 |
 | E | 3 | 9h | Week 15-16 |
@@ -564,4 +571,4 @@ TA01 (Done)
 
 *— End of Document —*
 
-*Infracast Task Breakdown v1.1 (Frozen) | Phase 4 of dev-lifecycle | Confidential*
+*Infracast Task Breakdown v1.2 (Frozen) | Phase 4 of dev-lifecycle | Confidential*
