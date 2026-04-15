@@ -4,7 +4,7 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [v0.1.0-rc1] — 2026-04-15
+## [v0.1.0] — 2026-04-15
 
 ### Added
 

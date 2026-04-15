@@ -1,13 +1,13 @@
-# Release Notes: v0.1.0-rc1
+# Release Notes: v0.1.0
 
 **Date**: 2026-04-15
-**Status**: Release Candidate (single-cloud, Alicloud only)
+**Status**: General Availability (single-cloud, Alicloud only)
 
 ---
 
 ## What's New
 
-Infracast v0.1.0-rc1 is the first release candidate, delivering a complete single-cloud deployment pipeline for Encore applications on Alibaba Cloud.
+Infracast v0.1.0 is the first stable release, delivering a complete single-cloud deployment pipeline for Encore applications on Alibaba Cloud.
 
 ### Single-Command Deploy
 
@@ -103,7 +103,7 @@ Run `infracast destroy --env dev --apply --keep-vpc 1` after testing to stop cha
 ### Download Binary
 
 ```bash
-VERSION="v0.1.0-rc1"
+VERSION="v0.1.0"
 # macOS Apple Silicon
 curl -LO "https://github.com/DaviRain-Su/Infracast/releases/download/${VERSION}/infracast_${VERSION}_darwin_arm64.tar.gz"
 tar xzf "infracast_${VERSION}_darwin_arm64.tar.gz"
