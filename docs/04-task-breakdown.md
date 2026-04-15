@@ -1,8 +1,10 @@
 # Infracast — Task Breakdown
 
-> **Version** 1.5 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner), consistency fix by @codex_
+> **Version** 1.6 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner), consistency fix by @codex_
 > **Phase**: dev-lifecycle Phase 4 (承接 Technical Spec v1.1 Frozen)
 > **Input**: PRD v1.1, Architecture v1.1, Technical Spec v1.1 (all Frozen)
+>
+> **v1.6 变更说明**: Milestone E 完成闭环。TE01-TE03 全部完成，Gate Decision: NO-GO for Phase 2。P0 问题需先解决（Phase 1.5）。
 >
 > **v1.5 变更说明**: Milestone D 完成闭环。TD01-TD04 全部通过技术审查，代码已合并到 main 分支。
 >
@@ -473,7 +475,7 @@
 
 > **Goal**: 接口冻结确认 + Phase 2 入口决策
 
-### TE01: Failure Rate Analysis
+### TE01: Failure Rate Analysis ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -483,7 +485,7 @@
 | Deliverables | `docs/milestone-e-report.md` |
 | Acceptance | 1. Run all 3 examples 5x each. Track success/failure. 2. Resource provisioning success rate >= 95%. 3. Deploy success rate >= 90%. 4. Document all failure modes encountered. |
 
-### TE02: Interface Freeze Audit
+### TE02: Interface Freeze Audit ✅ DONE
 
 | Field | Value |
 |-------|-------|
@@ -493,7 +495,7 @@
 | Deliverables | Updated `docs/milestone-e-report.md` |
 | Acceptance | 1. Compare implemented interfaces against Tech Spec §12 freeze list. 2. Any deviations documented with rationale. 3. Freeze list updated if needed (requires team approval). |
 
-### TE03: Phase 2 Gate Decision
+### TE03: Phase 2 Gate Decision ✅ DONE (NO-GO)
 
 | Field | Value |
 |-------|-------|
@@ -505,11 +507,11 @@
 
 ### Milestone E Summary
 
-| Task | Est. | Dependencies |
-|------|------|-------------|
-| TE01 | 4h | TD03 |
-| TE02 | 3h | TD03 |
-| TE03 | 2h | TE01, TE02 |
+| Task | Est. | Dependencies | Status |
+|------|------|-------------|--------|
+| TE01 | 4h | TD03 | ✅ Done |
+| TE02 | 3h | TD03 | ✅ Done |
+| TE03 | 2h | TE01, TE02 | ✅ Done (NO-GO) |
 
 **Total estimate**: 9h (≈ 1 working day, fits Week 15-16)
 
@@ -552,9 +554,9 @@ TA01 ✅
  TC05 ─────→ TD02 ✅
  TC08 ─────→ TD03 ✅
                 │
- TD03 ─────→ TE01 ──┐
- TD03 ─────→ TE02 ──┤
-              └────→ TE03
+ TD03 ✅ ──→ TE01 ✅ ─┐
+ TD03 ✅ ──→ TE02 ✅ ─┤
+              └────→ TE03 ✅ (NO-GO)
 ```
 
 ---
@@ -567,7 +569,7 @@ TA01 ✅
 | B | 10 (10 done) | 30h | Week 3-6 |
 | C | 8 (8 done) | 24h | Week 7-10 |
 | D | 4 (4 done) | 11h | Week 11-14 |
-| E | 3 | 9h | Week 15-16 |
+| E | 3 (3 done) | 9h | Week 15-16 |
 | **Total** | **34** | **102h** | **16 weeks** |
 
 ---
