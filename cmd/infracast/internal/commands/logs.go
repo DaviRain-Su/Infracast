@@ -382,9 +382,16 @@ func parseDuration(s string) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
+// defaultDBPath returns the state database path.
+// It checks INFRACAST_STATE_DB env var first, then falls back to .infra/state.db.
+func defaultDBPath() string {
+	if p := os.Getenv("INFRACAST_STATE_DB"); p != "" {
+		return p
+	}
+	return ".infra/state.db"
+}
+
 // openStateDB opens the state database
 func openStateDB() (*sql.DB, error) {
-	// TODO: Get DB path from config
-	dbPath := ".infra/state.db"
-	return sql.Open("sqlite3", dbPath)
+	return sql.Open("sqlite3", defaultDBPath())
 }

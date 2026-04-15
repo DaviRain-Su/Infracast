@@ -53,7 +53,7 @@ func TestNewStatusCommand(t *testing.T) {
 	// Check flags
 	flag := cmd.Flags().Lookup("env")
 	assert.NotNil(t, flag)
-	assert.Equal(t, "dev", flag.DefValue)
+	assert.Equal(t, "", flag.DefValue)
 }
 
 // TestNewRootCommand validates root command includes new subcommands

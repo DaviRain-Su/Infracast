@@ -1,13 +1,17 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/fatih/color"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/cobra"
+
+	"github.com/DaviRain-Su/infracast/internal/state"
 )
 
 // newEnvCommand creates the env management command
@@ -316,33 +320,43 @@ func runEnvDelete(name string, force bool) error {
 	return nil
 }
 
-// Helper functions (placeholders for actual implementation)
+// Helper functions — backed by state store
+
+func openEnvStore() (*state.Store, error) {
+	return state.NewStore(defaultDBPath())
+}
 
 func loadEnvironments() ([]Environment, error) {
-	// TODO: Load from infracast.yaml or state store
-	return []Environment{
-		{
-			Name:        "dev",
-			Provider:    "alicloud",
-			Region:      "cn-hangzhou",
-			Description: "Development environment",
-			Default:     true,
-			Resources: []EnvResource{
-				{Type: "sql_server", Name: "main", Status: "ready"},
-				{Type: "redis", Name: "cache", Status: "ready"},
-			},
-		},
-		{
-			Name:        "staging",
-			Provider:    "alicloud",
-			Region:      "cn-shanghai",
-			Description: "Staging environment",
-			Default:     false,
-			Resources: []EnvResource{
-				{Type: "sql_server", Name: "main", Status: "ready"},
-			},
-		},
-	}, nil
+	store, err := openEnvStore()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	envNames, err := store.ListEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var envs []Environment
+	for _, name := range envNames {
+		resources, _ := store.ListResourcesByEnv(ctx, name)
+		env := Environment{
+			Name:     name,
+			Provider: "alicloud",
+			Region:   "-",
+		}
+		for _, r := range resources {
+			env.Resources = append(env.Resources, EnvResource{
+				Type:   r.ResourceType,
+				Name:   r.ResourceName,
+				Status: r.Status,
+			})
+		}
+		envs = append(envs, env)
+	}
+
+	return envs, nil
 }
 
 func loadEnvironment(name string) (Environment, error) {
@@ -366,18 +380,36 @@ func envExists(name string) bool {
 }
 
 func saveEnvironment(env Environment) error {
-	// TODO: Save to infracast.yaml or state store
-	return nil
+	store, err := openEnvStore()
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	// Create a placeholder resource to register the environment in state
+	return store.UpsertResource(ctx, &state.InfraResource{
+		EnvID:        env.Name,
+		ResourceName: "_env_meta",
+		ResourceType: "environment",
+		Status:       "created",
+		ConfigJSON:   fmt.Sprintf(`{"provider":"%s","region":"%s"}`, env.Provider, env.Region),
+	})
 }
 
 func deleteEnvironment(name string) error {
-	// TODO: Remove from infracast.yaml or state store
-	return nil
+	store, err := openEnvStore()
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	// Delete the env meta resource
+	return store.DeleteResource(ctx, name, "_env_meta")
 }
 
 func setDefaultEnvironment(name string) error {
-	// TODO: Update default in configuration
-	return nil
+	// Write default env to a local config file
+	return os.WriteFile(".infra/default-env", []byte(name), 0644)
 }
 
 func validateEnvName(name string) error {
@@ -400,11 +432,6 @@ func validateEnvName(name string) error {
 }
 
 func isValidProvider(provider string) bool {
-	validProviders := []string{"alicloud", "aws", "gcp"}
-	for _, p := range validProviders {
-		if p == provider {
-			return true
-		}
-	}
-	return false
+	// v0.1.x: single-cloud, Alicloud only
+	return provider == "alicloud"
 }
