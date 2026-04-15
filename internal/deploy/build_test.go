@@ -12,7 +12,7 @@ import (
 func TestNewBuilder(t *testing.T) {
 	builder := NewBuilder()
 	assert.NotNil(t, builder)
-	assert.Equal(t, 5*time.Minute, builder.timeout)
+	assert.Equal(t, 10*time.Minute, builder.timeout)
 }
 
 // TestBuildResultFields validates result struct
@@ -151,5 +151,5 @@ func TestBuildConfigFields(t *testing.T) {
 // TestBuilderTimeout validates custom timeout
 func TestBuilderTimeout(t *testing.T) {
 	builder := NewBuilder()
-	assert.Equal(t, 5*time.Minute, builder.timeout)
+	assert.Equal(t, 10*time.Minute, builder.timeout)
 }

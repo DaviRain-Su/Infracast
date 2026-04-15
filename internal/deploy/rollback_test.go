@@ -93,10 +93,10 @@ func TestHasPreviousRevision(t *testing.T) {
 	k8sClient := &K8sClient{}
 	manager := NewRollbackManager(k8sClient)
 
-	// For now, returns true as placeholder
-	hasPrevious, err := manager.hasPreviousRevision(nil, "myapp")
-	assert.NoError(t, err)
-	assert.True(t, hasPrevious)
+	// Returns error when K8s client is not initialized
+	_, err := manager.hasPreviousRevision(nil, "myapp")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EDEPLOY060")
 }
 
 // TestValidateRollbackSafety validates safety checks
@@ -104,9 +104,10 @@ func TestValidateRollbackSafety(t *testing.T) {
 	k8sClient := &K8sClient{}
 	manager := NewRollbackManager(k8sClient)
 
-	// For now, returns nil (placeholder)
+	// Returns error when K8s client is not initialized
 	err := manager.validateRollbackSafety(nil, "myapp")
-	assert.NoError(t, err)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EDEPLOY065")
 }
 
 // TestIsRollbackStable validates stable check
@@ -114,8 +115,8 @@ func TestIsRollbackStable(t *testing.T) {
 	k8sClient := &K8sClient{}
 	manager := NewRollbackManager(k8sClient)
 
-	// For now, returns true as placeholder
-	stable, err := manager.isRollbackStable(nil, "myapp")
-	assert.NoError(t, err)
-	assert.True(t, stable)
+	// Returns error when K8s client is not initialized
+	_, err := manager.isRollbackStable(nil, "myapp")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EDEPLOY062")
 }

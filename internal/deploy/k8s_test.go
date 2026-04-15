@@ -3,18 +3,21 @@ package deploy
 import (
 	"testing"
 
-	"github.com/DaviRain-Su/infracast/pkg/infragen"
+	"github.com/DaviRain-Su/infracast/internal/infragen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // TestGenerateManifests validates manifest generation
 func TestGenerateManifests(t *testing.T) {
-	client := NewK8sClient("test-ns", &K8sConfig{
+	client, err := NewK8sClient("test-ns", &K8sConfig{
 		KubeConfigPath: "~/.kube/config",
 		ClusterID:      "c123",
 		Region:         "cn-hangzhou",
 	})
+	if err != nil {
+		t.Skipf("Skipping test - no K8s config available: %v", err)
+	}
 
 	cfg := &DeployConfig{
 		AppName:  "myapp",
@@ -30,7 +33,7 @@ func TestGenerateManifests(t *testing.T) {
 
 	infraCfg := &infragen.InfraCfg{
 		SQLServers: map[string]infragen.SQLServer{
-			"users": {Host: "localhost", Port: 5432},
+			"users": {Name: "users", Host: "localhost", Port: 5432, Database: "users", User: "postgres"},
 		},
 	}
 
@@ -76,7 +79,10 @@ func TestNewK8sClient(t *testing.T) {
 		Region:         "cn-hangzhou",
 	}
 
-	client := NewK8sClient("test-ns", config)
+	client, err := NewK8sClient("test-ns", config)
+	if err != nil {
+		t.Skipf("Skipping test - no K8s config available: %v", err)
+	}
 	assert.NotNil(t, client)
 	assert.Equal(t, "test-ns", client.namespace)
 	assert.Equal(t, config, client.config)

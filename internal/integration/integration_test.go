@@ -10,9 +10,9 @@ import (
 
 	"github.com/DaviRain-Su/infracast/internal/config"
 	"github.com/DaviRain-Su/infracast/internal/credentials"
+	"github.com/DaviRain-Su/infracast/internal/infragen"
 	"github.com/DaviRain-Su/infracast/internal/provisioner"
 	"github.com/DaviRain-Su/infracast/internal/state"
-	"github.com/DaviRain-Su/infracast/pkg/infragen"
 	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,7 +105,7 @@ func TestPipeline_MockProvider_FullCycle(t *testing.T) {
 	assert.True(t, ok, "Cache should be provisioned")
 
 	// Phase 3: Generate - Create infrcfg.json
-	generator := infragen.NewGenerator(nil)
+	generator := infragen.NewGenerator()
 	cfg := &infragen.InfraCfg{
 		SQLServers: map[string]infragen.SQLServer{
 			"users": {
@@ -119,16 +119,16 @@ func TestPipeline_MockProvider_FullCycle(t *testing.T) {
 		},
 		Redis: map[string]infragen.RedisServer{
 			"session": {
+				Name:      "session",
 				Host:      "session-cache.example.com",
 				Port:      6379,
-				Password:  "${SESSION_CACHE_PASSWORD}",
+				Auth:      "${SESSION_CACHE_PASSWORD}",
 				KeyPrefix: "app:",
-				Auth:      &infragen.AuthConfig{Enabled: true},
 			},
 		},
 		ObjectStorage: map[string]infragen.ObjectStore{
 			"assets": {
-				Type:      "S3",
+				Name:      "assets",
 				Endpoint:  "https://oss-cn-hangzhou.aliyuncs.com",
 				Bucket:    "assets",
 				Region:    "cn-hangzhou",
