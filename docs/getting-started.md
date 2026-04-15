@@ -145,9 +145,9 @@ notifications:
 
 ### Learn More
 
-- [Configuration Reference](configuration.md)
-- [Deployment Guide](deployment.md)
-- [Troubleshooting](troubleshooting.md)
+- [Technical Spec](03-technical-spec.md)
+- [Task Breakdown](04-task-breakdown.md)
+- [Single-Cloud Operations Handbook](06-single-cloud-operations.md)
 
 ## Example Applications
 

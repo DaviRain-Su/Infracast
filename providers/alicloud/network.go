@@ -26,7 +26,7 @@ type networkState struct {
 	vswitchID string
 }
 
-func (p *Provider) ensureNetwork(ctx context.Context, envID string) (string, string, error) {
+func (p *Provider) ensureNetwork(ctx context.Context) (string, string, error) {
 	p.networkMu.Lock()
 	defer p.networkMu.Unlock()
 
@@ -39,8 +39,8 @@ func (p *Provider) ensureNetwork(ctx context.Context, envID string) (string, str
 	}
 
 	// Try to restore from state store if available
-	if p.stateStore != nil && envID != "" {
-		if vpcID, vswitchID, err := p.restoreNetworkFromState(ctx, envID); err == nil {
+	if p.stateStore != nil && p.envID != "" {
+		if vpcID, vswitchID, err := p.restoreNetworkFromState(ctx, p.envID); err == nil {
 			p.networkCache.vpcID = vpcID
 			p.networkCache.vswitchID = vswitchID
 			p.networkCache.ready = true
@@ -56,12 +56,12 @@ func (p *Provider) ensureNetwork(ctx context.Context, envID string) (string, str
 		return "", "", fmt.Errorf("VPC client not initialized")
 	}
 
-	vpcID, err := p.ensureVPC(ctx, envID, p.region)
+	vpcID, err := p.ensureVPC(ctx, p.region)
 	if err != nil {
 		return "", "", err
 	}
 
-	vswitchID, err := p.ensureVSwitch(ctx, envID, vpcID)
+	vswitchID, err := p.ensureVSwitch(ctx, vpcID)
 	if err != nil {
 		return "", "", err
 	}
@@ -142,7 +142,7 @@ func (p *Provider) verifyVSwitchExists(vswitchID, vpcID string) error {
 	return nil
 }
 
-func (p *Provider) ensureVPC(ctx context.Context, envID, region string) (string, error) {
+func (p *Provider) ensureVPC(ctx context.Context, region string) (string, error) {
 	describeReq := vpc.CreateDescribeVpcsRequest()
 	describeReq.RegionId = region
 	describeReq.VpcName = networkVPCName(region)
@@ -156,8 +156,8 @@ func (p *Provider) ensureVPC(ctx context.Context, envID, region string) (string,
 			}
 		}
 		// Save to state store if available
-		if envID != "" {
-			p.saveVPCState(ctx, envID, existing.VpcId, existing.VpcName)
+		if p.envID != "" {
+			p.saveVPCState(ctx, p.envID, existing.VpcId, existing.VpcName)
 		}
 		return existing.VpcId, nil
 	}
@@ -168,8 +168,8 @@ func (p *Provider) ensureVPC(ctx context.Context, envID, region string) (string,
 			return "", fmt.Errorf("failed to wait for reusable VPC to become available: %w", err)
 		}
 		// Save to state store if available
-		if envID != "" {
-			p.saveVPCState(ctx, envID, reusableID, networkVPCName(region))
+		if p.envID != "" {
+			p.saveVPCState(ctx, p.envID, reusableID, networkVPCName(region))
 		}
 		return reusableID, nil
 	}
@@ -188,8 +188,8 @@ func (p *Provider) ensureVPC(ctx context.Context, envID, region string) (string,
 					return "", fmt.Errorf("failed to wait for reusable VPC after quota exceeded: %w", waitErr)
 				}
 				// Save to state store if available
-				if envID != "" {
-					p.saveVPCState(ctx, envID, reusableID, networkVPCName(region))
+				if p.envID != "" {
+					p.saveVPCState(ctx, p.envID, reusableID, networkVPCName(region))
 				}
 				return reusableID, nil
 			}
@@ -206,8 +206,8 @@ func (p *Provider) ensureVPC(ctx context.Context, envID, region string) (string,
 	}
 	
 	// Save to state store if available
-	if envID != "" {
-		p.saveVPCState(ctx, envID, resp.VpcId, networkVPCName(region))
+	if p.envID != "" {
+		p.saveVPCState(ctx, p.envID, resp.VpcId, networkVPCName(region))
 	}
 	
 	return resp.VpcId, nil
@@ -275,7 +275,7 @@ func (p *Provider) findReusableVPC(region string) (string, bool) {
 	}
 }
 
-func (p *Provider) ensureVSwitch(ctx context.Context, envID, vpcID string) (string, error) {
+func (p *Provider) ensureVSwitch(ctx context.Context, vpcID string) (string, error) {
 	vswName := networkVSwitchName(p.region)
 	
 	describeReq := vpc.CreateDescribeVSwitchesRequest()
@@ -287,8 +287,8 @@ func (p *Provider) ensureVSwitch(ctx context.Context, envID, vpcID string) (stri
 	if err == nil && describeResp != nil && describeResp.TotalCount > 0 && len(describeResp.VSwitches.VSwitch) > 0 {
 		vswitchID := describeResp.VSwitches.VSwitch[0].VSwitchId
 		// Save to state store if available
-		if envID != "" {
-			p.saveVSwitchState(ctx, envID, vpcID, vswitchID, vswName)
+		if p.envID != "" {
+			p.saveVSwitchState(ctx, p.envID, vpcID, vswitchID, vswName)
 		}
 		return vswitchID, nil
 	}
@@ -318,8 +318,8 @@ func (p *Provider) ensureVSwitch(ctx context.Context, envID, vpcID string) (stri
 					return "", fmt.Errorf("failed to create default vSwitch: empty vSwitch ID in response")
 				}
 				// Save to state store if available
-				if envID != "" {
-					p.saveVSwitchState(ctx, envID, vpcID, resp.VSwitchId, vswName)
+				if p.envID != "" {
+					p.saveVSwitchState(ctx, p.envID, vpcID, resp.VSwitchId, vswName)
 				}
 				return resp.VSwitchId, nil
 			}
@@ -421,4 +421,3 @@ func (p *Provider) waitForVPCAvailable(vpcID string) error {
 	}
 }
 
-// TODO: Persist network IDs in state store for cross-process reuse.

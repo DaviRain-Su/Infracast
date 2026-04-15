@@ -33,6 +33,7 @@ type Provider struct {
 	networkCache    *networkState
 	networkMu       sync.RWMutex
 	stateStore      StateStore // Optional state store for network persistence
+	envID           string     // Environment ID for state persistence
 }
 
 // StateStore defines the interface for network state persistence
@@ -44,6 +45,11 @@ type StateStore interface {
 // SetStateStore sets the state store for network persistence
 func (p *Provider) SetStateStore(store StateStore) {
 	p.stateStore = store
+}
+
+// SetEnvironment sets the environment ID for state persistence
+func (p *Provider) SetEnvironment(envID string) {
+	p.envID = envID
 }
 
 // NewProvider creates a new AliCloud provider instance
@@ -115,8 +121,8 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	}
 
 	// Ensure default VPC/VSwitch are available for network-bound resources.
-	// Use spec.Name as envID for network state persistence
-	vpcID, vswID, err := p.ensureNetwork(ctx, spec.Name)
+	// Uses p.envID for state persistence (set via SetEnvironment)
+	vpcID, vswID, err := p.ensureNetwork(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -266,8 +272,8 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 	}
 
 	// Ensure default VPC/VSwitch are available for network-bound resources.
-	// Use spec.Name as envID for network state persistence
-	vpcID, vswID, err := p.ensureNetwork(ctx, spec.Name)
+	// Uses p.envID for state persistence (set via SetEnvironment)
+	vpcID, vswID, err := p.ensureNetwork(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -333,8 +339,8 @@ func (p *Provider) ProvisionObjectStorage(ctx context.Context, spec providers.Ob
 	}
 
 	// Ensure default VPC/VSwitch are available for network-bound resources.
-	// Use spec.Name as envID for network state persistence
-	if _, _, err := p.ensureNetwork(ctx, spec.Name); err != nil {
+	// Uses p.envID for state persistence (set via SetEnvironment)
+	if _, _, err := p.ensureNetwork(ctx); err != nil {
 		return nil, err
 	}
 
