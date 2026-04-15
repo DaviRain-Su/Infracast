@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
 )
 
@@ -120,7 +121,7 @@ func (p *Provider) findReusableVPC(region string) (string, bool) {
 	for {
 		req := vpc.CreateDescribeVpcsRequest()
 		req.RegionId = region
-		req.PageNumber = fmt.Sprintf("%d", page)
+		req.PageNumber = requests.NewInteger(page)
 
 		resp, err := p.vpcClient.DescribeVpcs(req)
 		if err != nil || resp == nil || len(resp.Vpcs.Vpc) == 0 {
