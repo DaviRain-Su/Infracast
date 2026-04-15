@@ -18,11 +18,12 @@ import (
 // newLogsCommand creates the logs command
 func newLogsCommand() *cobra.Command {
 	var (
-		env    string
-		action string
-		level  string
-		limit  int
-		since  string
+		env     string
+		action  string
+		level   string
+		limit   int
+		since   string
+		traceID string
 	)
 
 	cmd := &cobra.Command{
@@ -47,14 +48,18 @@ Examples:
   infracast logs --since 24h
 
   # View last 50 entries
-  infracast logs --limit 50`,
+  infracast logs --limit 50
+
+  # Trace a specific deploy run
+  infracast logs --trace trc_1234567890`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLogs(LogsOptions{
-				Env:    env,
-				Action: action,
-				Level:  level,
-				Limit:  limit,
-				Since:  since,
+				Env:     env,
+				Action:  action,
+				Level:   level,
+				Limit:   limit,
+				Since:   since,
+				TraceID: traceID,
 			})
 		},
 	}
@@ -64,17 +69,19 @@ Examples:
 	cmd.Flags().StringVarP(&level, "level", "l", "", "Filter by level (INFO, WARN, ERROR)")
 	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum number of entries to show")
 	cmd.Flags().StringVar(&since, "since", "", "Show logs since duration (e.g., 1h, 24h, 7d)")
+	cmd.Flags().StringVar(&traceID, "trace", "", "Filter by trace ID (e.g., trc_1234567890)")
 
 	return cmd
 }
 
 // LogsOptions contains log viewing options
 type LogsOptions struct {
-	Env    string
-	Action string
-	Level  string
-	Limit  int
-	Since  string
+	Env     string
+	Action  string
+	Level   string
+	Limit   int
+	Since   string
+	TraceID string
 }
 
 // runLogs executes the logs command
@@ -104,10 +111,11 @@ func runLogs(opts LogsOptions) error {
 
 	// Build query options
 	queryOpts := state.QueryOptions{
-		Env:    opts.Env,
-		Action: opts.Action,
-		Limit:  opts.Limit,
-		Since:  sinceTime,
+		Env:     opts.Env,
+		Action:  opts.Action,
+		Limit:   opts.Limit,
+		Since:   sinceTime,
+		TraceID: opts.TraceID,
 	}
 
 	if opts.Level != "" {
@@ -138,12 +146,22 @@ func printLogs(events []state.AuditEvent) {
 	fmt.Println()
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TIME\tLEVEL\tACTION\tENV\tMESSAGE\tDURATION")
-	fmt.Fprintln(w, "----\t-----\t------\t---\t-------\t--------")
+	fmt.Fprintln(w, "TIME\tTRACE\tLEVEL\tACTION\tSTEP\tSTATUS\tENV\tDURATION\tMESSAGE")
+	fmt.Fprintln(w, "----\t-----\t-----\t------\t----\t------\t---\t--------\t-------")
 
 	for _, event := range events {
 		// Format timestamp
 		timestamp := event.Timestamp.Format("2006-01-02 15:04")
+
+		// Format trace ID (short form)
+		traceStr := "-"
+		if event.TraceID != "" {
+			if len(event.TraceID) > 12 {
+				traceStr = event.TraceID[:12]
+			} else {
+				traceStr = event.TraceID
+			}
+		}
 
 		// Color code level
 		levelStr := string(event.Level)
@@ -154,6 +172,22 @@ func printLogs(events []state.AuditEvent) {
 			levelStr = color.YellowString(levelStr)
 		default:
 			levelStr = color.GreenString(levelStr)
+		}
+
+		// Format status with color
+		statusStr := event.Status
+		if statusStr == "" {
+			statusStr = "-"
+		} else if statusStr == "ok" {
+			statusStr = color.GreenString("ok")
+		} else if statusStr == "fail" {
+			statusStr = color.RedString("fail")
+		}
+
+		// Format step
+		stepStr := event.Step
+		if stepStr == "" {
+			stepStr = "-"
 		}
 
 		// Format duration
@@ -168,14 +202,39 @@ func printLogs(events []state.AuditEvent) {
 			envStr = "-"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		// Build message with error code if present
+		msg := truncateString(event.Message, 40)
+		if event.ErrorCode != "" {
+			msg = event.ErrorCode + ": " + msg
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			timestamp,
+			traceStr,
 			levelStr,
 			event.Action,
+			stepStr,
+			statusStr,
 			envStr,
-			truncateString(event.Message, 40),
 			durationStr,
+			msg,
 		)
+	}
+
+	w.Flush()
+
+	// Show error details at the bottom for visibility
+	for _, event := range events {
+		if event.Level == state.AuditLevelError && event.Error != "" {
+			color.Red("\n  Error in [%s/%s]:", event.Action, event.Step)
+			if event.ErrorCode != "" {
+				fmt.Printf("    Code:       %s\n", event.ErrorCode)
+			}
+			if event.RequestID != "" {
+				fmt.Printf("    Request ID: %s\n", event.RequestID)
+			}
+			fmt.Printf("    Message:    %s\n", event.Error)
+		}
 	}
 
 	w.Flush()

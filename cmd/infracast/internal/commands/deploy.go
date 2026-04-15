@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,6 +13,8 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+
+	"github.com/DaviRain-Su/infracast/internal/state"
 )
 
 // newDeployCommand creates the deploy command with progress tracking
@@ -124,11 +127,22 @@ func runDeploy(opts DeployOptions) error {
 	// Execute deployment steps
 	steps := buildDeploySteps(opts, config)
 
-	if opts.Verbose {
-		return runDeployVerbose(ctx, steps)
+	// Open audit store for logging
+	auditStore, auditDB := openAuditStore()
+	if auditDB != nil {
+		defer auditDB.Close()
+	}
+	traceID := ""
+	if auditStore != nil {
+		traceID = state.GenerateTraceID()
+		fmt.Printf("Trace ID: %s\n\n", traceID)
 	}
 
-	return runDeployWithProgress(ctx, steps)
+	if opts.Verbose {
+		return runDeployVerbose(ctx, steps, auditStore, traceID, opts.Env)
+	}
+
+	return runDeployWithProgress(ctx, steps, auditStore, traceID, opts.Env)
 }
 
 // printDeployBanner prints the deployment banner
@@ -190,7 +204,7 @@ type stepResult struct {
 }
 
 // runDeployVerbose runs deployment with verbose output
-func runDeployVerbose(ctx context.Context, steps []DeployStep) error {
+func runDeployVerbose(ctx context.Context, steps []DeployStep, audit *state.AuditStore, traceID, env string) error {
 	results := make([]stepResult, 0, len(steps))
 	deployStart := time.Now()
 
@@ -206,11 +220,13 @@ func runDeployVerbose(ctx context.Context, steps []DeployStep) error {
 			color.Red("✗ %s failed", step.Name)
 			printErrorHint(err)
 			fmt.Printf("  Error: %v\n", err)
+			logAuditStep(audit, ctx, traceID, env, step.Name, "fail", elapsed, err)
 			printDeploySummary(results, time.Since(deployStart))
 			return fmt.Errorf("step %s failed: %w", step.Name, err)
 		}
 
 		results = append(results, stepResult{Name: step.Name, Ok: true, Duration: elapsed})
+		logAuditStep(audit, ctx, traceID, env, step.Name, "ok", elapsed, nil)
 		color.Green("✓ %s completed", step.Name)
 		fmt.Println()
 	}
@@ -221,7 +237,7 @@ func runDeployVerbose(ctx context.Context, steps []DeployStep) error {
 }
 
 // runDeployWithProgress runs deployment with spinner progress
-func runDeployWithProgress(ctx context.Context, steps []DeployStep) error {
+func runDeployWithProgress(ctx context.Context, steps []DeployStep, audit *state.AuditStore, traceID, env string) error {
 	results := make([]stepResult, 0, len(steps))
 	deployStart := time.Now()
 
@@ -245,10 +261,12 @@ func runDeployWithProgress(ctx context.Context, steps []DeployStep) error {
 				color.Red("✗ %s", step.Description)
 				printErrorHint(err)
 				fmt.Printf("  Error: %v\n", err)
+				logAuditStep(audit, ctx, traceID, env, step.Name, "fail", elapsed, err)
 				printDeploySummary(results, time.Since(deployStart))
 				return fmt.Errorf("step %s failed: %w", step.Name, err)
 			}
 			results = append(results, stepResult{Name: step.Name, Ok: true, Duration: elapsed})
+			logAuditStep(audit, ctx, traceID, env, step.Name, "ok", elapsed, nil)
 			color.Green("✓ %s", step.Description)
 
 		case <-ctx.Done():
@@ -372,6 +390,87 @@ func runVerifyStep(ctx context.Context, config *DeployConfig) error {
 	// TODO: Implement actual verification
 	time.Sleep(100 * time.Millisecond) // Simulate work
 	return nil
+}
+
+// openAuditStore opens the state DB and returns an audit store (best-effort, nil if unavailable)
+func openAuditStore() (*state.AuditStore, *sql.DB) {
+	db, err := openStateDB()
+	if err != nil {
+		return nil, nil
+	}
+	store := state.NewAuditStore(db)
+	if err := store.InitAuditTable(); err != nil {
+		db.Close()
+		return nil, nil
+	}
+	return store, db
+}
+
+// logAuditStep logs a single deploy step to the audit store
+func logAuditStep(audit *state.AuditStore, ctx context.Context, traceID, env, stepName, status string, duration time.Duration, err error) {
+	if audit == nil {
+		return
+	}
+	opts := []state.AuditLogOption{
+		state.WithAuditTraceID(traceID),
+		state.WithAuditStep(stepName),
+		state.WithAuditStatus(status),
+		state.WithAuditEnv(env),
+	}
+	if err != nil {
+		code := extractErrorCode(err.Error())
+		if code != "" {
+			opts = append(opts, state.WithAuditErrorCode(code))
+		}
+		reqID := extractRequestID(err.Error())
+		if reqID != "" {
+			opts = append(opts, state.WithAuditRequestID(reqID))
+		}
+	}
+	msg := stepName
+	if err != nil {
+		msg = err.Error()
+	}
+	audit.LogOperation(ctx, state.AuditActionDeploy, duration, err, opts...)
+	_ = msg // message is set by LogOperation via err
+}
+
+// extractErrorCode extracts a structured error code (e.g. "EDEPLOY001") from an error message
+func extractErrorCode(msg string) string {
+	// Match patterns like ECFG001, EDEPLOY001, EPROV003
+	prefixes := []string{"ECFG", "EDEPLOY", "EPROV", "EIGEN", "ESTATE"}
+	for _, p := range prefixes {
+		idx := strings.Index(msg, p)
+		if idx >= 0 {
+			end := idx + len(p)
+			for end < len(msg) && msg[end] >= '0' && msg[end] <= '9' {
+				end++
+			}
+			if end > idx+len(p) {
+				return msg[idx:end]
+			}
+		}
+	}
+	return ""
+}
+
+// extractRequestID extracts a cloud provider request ID from an error message
+func extractRequestID(msg string) string {
+	// Match patterns like RequestId: XXXX or requestId=XXXX
+	for _, pattern := range []string{"RequestId: ", "requestId=", "RequestID: "} {
+		idx := strings.Index(msg, pattern)
+		if idx >= 0 {
+			start := idx + len(pattern)
+			end := start
+			for end < len(msg) && msg[end] != ' ' && msg[end] != ',' && msg[end] != '\n' {
+				end++
+			}
+			if end > start {
+				return msg[start:end]
+			}
+		}
+	}
+	return ""
 }
 
 // printDeploySummary prints a summary table of all step results

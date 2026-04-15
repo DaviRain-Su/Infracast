@@ -175,6 +175,48 @@ infracast status --env dev
 | Registry push fails | Invalid registry credentials | Re-authenticate: `docker login <registry-url>` |
 | Deploy timeout | Network or cluster issue | Check connectivity; retry with `--verbose` for details |
 
+## Troubleshooting a Failed Deploy with Trace ID
+
+Every deploy/provision run generates a `trace_id` that links all steps in that pipeline. When a deploy fails, use the trace ID to see the full timeline:
+
+**Step 1**: Find the failed deploy trace
+
+```bash
+infracast logs --level ERROR --since 1h
+```
+
+Output shows:
+```
+TIME              TRACE         LEVEL  ACTION  STEP        STATUS  ENV  DURATION  MESSAGE
+2026-04-15 16:30  trc_17131...  ERROR  deploy  provision   fail    dev  5s        EPROV003: NotEnoughBalance...
+```
+
+**Step 2**: View all steps in that trace
+
+```bash
+infracast logs --trace trc_17131...
+```
+
+Output shows the full pipeline:
+```
+TIME              TRACE         LEVEL  ACTION  STEP        STATUS  ENV  DURATION  MESSAGE
+2026-04-15 16:30  trc_17131...  INFO   deploy  build       ok      dev  12s       Docker image built
+2026-04-15 16:30  trc_17131...  INFO   deploy  push        ok      dev  8s        Image pushed to registry
+2026-04-15 16:30  trc_17131...  ERROR  deploy  provision   fail    dev  5s        EPROV003: NotEnoughBalance...
+
+  Error in [deploy/provision]:
+    Code:       EPROV003
+    Request ID: 7B3A4C2D-...
+    Message:    InvalidAccountStatus.NotEnoughBalance
+```
+
+**Step 3**: Act on the error
+
+The error code (`EPROV003`) and provider request ID let you:
+- Look up the exact cloud API call that failed
+- Cross-reference with your provider's console/support
+- See the "Common Errors" table above for suggested fixes
+
 ## Example Applications
 
 Check out the [examples](../examples/) directory for complete sample applications:
