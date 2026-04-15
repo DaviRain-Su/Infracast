@@ -6,7 +6,7 @@
 
 - [Go](https://golang.org/dl/) 1.22 或更高版本
 - [Encore CLI](https://encore.dev/docs/install)
-- [Infracast CLI](../README.md#installation)
+- [Infracast CLI](../../README.md#installation)
 - 阿里云账号及访问凭证
 
 ## 凭证与安全基线（阿里云）
@@ -146,8 +146,8 @@ notifications:
 
 ### 了解更多
 
-- [Technical Spec](../03-technical-spec.md)
-- [Task Breakdown](../04-task-breakdown.md)
+- [Technical Spec](../../03-technical-spec.md)
+- [Task Breakdown](../../04-task-breakdown.md)
 - [单云运维手册](06-single-cloud-operations.md)
 
 ## 快速命令流程
@@ -222,8 +222,8 @@ TIME              TRACE         LEVEL  ACTION  STEP        STATUS  ENV  DURATION
 
 ## 示例应用
 
-查看 [examples](../examples/) 目录获取完整的示例应用：
+查看 [examples](../../examples/) 目录获取完整的示例应用：
 
-- [hello-world](../examples/hello-world/) - 最小示例
-- [todo-app](../examples/todo-app/) - 带数据库的 Todo 应用
-- [blog-api](../examples/blog-api/) - 支持 OSS 上传的博客 API
+- [hello-world](../../examples/hello-world/) - 最小示例
+- [todo-app](../../examples/todo-app/) - 带数据库的 Todo 应用
+- [blog-api](../../examples/blog-api/) - 支持 OSS 上传的博客 API
