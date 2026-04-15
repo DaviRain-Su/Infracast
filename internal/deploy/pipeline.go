@@ -268,7 +268,7 @@ func (p *Pipeline) stepPush(ctx context.Context, input *PipelineInput) error {
 	return nil
 }
 
-// stepProvision provisions infrastructure via provisioner core
+// stepProvision provisions infrastructure via direct provider methods
 func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) error {
 	p.log("  Provisioning infrastructure...")
 	
@@ -289,46 +289,72 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 	
 	// Map build metadata to resource specs
 	meta := input.BuildResult.BuildMeta
-	mapperInstance := mapper.NewMapper(nil) // Registry can be nil for default mapping
+	mapperInstance := mapper.NewMapper(nil)
 	specs := mapperInstance.MapToResourceSpecs(meta)
 	
-	// Plan the deployment
-	plan, err := provider.Plan(ctx, specs)
-	if err != nil {
-		return fmt.Errorf("EDEPLOY075: plan failed: %w", err)
-	}
-	
-	// Apply the plan
-	applyResult, err := provider.Apply(ctx, plan)
-	if err != nil {
-		return fmt.Errorf("EDEPLOY076: apply failed: %w", err)
-	}
-	
-	// Convert resource outputs for config generation
-	input.ResourceOutputs = make([]infragen.ResourceOutput, 0, len(applyResult.Resources))
-	for _, output := range applyResult.Resources {
-		// Convert output.Output to map[string]string
-		var outputMap map[string]string
-		switch v := output.Output.(type) {
-		case map[string]string:
-			outputMap = v
-		case map[string]interface{}:
-			outputMap = make(map[string]string, len(v))
-			for key, val := range v {
-				outputMap[key] = fmt.Sprintf("%v", val)
+	// Directly provision each resource (bypass Plan/Apply stubs)
+	input.ResourceOutputs = make([]infragen.ResourceOutput, 0, len(specs))
+	for _, spec := range specs {
+		var output infragen.ResourceOutput
+		
+		switch spec.Type {
+		case "database":
+			if spec.DatabaseSpec == nil {
+				continue
 			}
+			dbOutput, err := provider.ProvisionDatabase(ctx, *spec.DatabaseSpec)
+			if err != nil {
+				return fmt.Errorf("EDEPLOY075: failed to provision database %s: %w", spec.DatabaseSpec.Name, err)
+			}
+			// TODO: Poll for endpoint if empty, set password
+			output = infragen.ResourceOutput{
+				Type: "sql_server",
+				Name: spec.DatabaseSpec.Name,
+				Output: map[string]string{
+					"host":     dbOutput.Endpoint,
+					"port":     fmt.Sprintf("%d", dbOutput.Port),
+					"database": spec.DatabaseSpec.Name,
+					"user":     dbOutput.Username,
+					"password": dbOutput.Password,
+				},
+			}
+			
+		case "cache":
+			if spec.CacheSpec == nil {
+				continue
+			}
+			cacheOutput, err := provider.ProvisionCache(ctx, *spec.CacheSpec)
+			if err != nil {
+				return fmt.Errorf("EDEPLOY075: failed to provision cache %s: %w", spec.CacheSpec.Name, err)
+			}
+			// TODO: Poll for endpoint if empty
+			output = infragen.ResourceOutput{
+				Type: "redis",
+				Name: spec.CacheSpec.Name,
+				Output: map[string]string{
+					"host":     cacheOutput.Endpoint,
+					"port":     fmt.Sprintf("%d", cacheOutput.Port),
+					"password": cacheOutput.Password,
+				},
+			}
+			
+		case "object_storage":
+			if spec.ObjectStorageSpec == nil {
+				continue
+			}
+			// TODO: Implement ProvisionObjectStorage
+			p.logf("  Skipping object storage %s (not yet implemented)", spec.ObjectStorageSpec.Name)
+			continue
+			
 		default:
-			outputMap = map[string]string{"value": fmt.Sprintf("%v", output.Output)}
+			p.logf("  Unknown resource type: %s", spec.Type)
+			continue
 		}
-		resOutput := infragen.ResourceOutput{
-			Type:   output.Type,
-			Name:   output.Name,
-			Output: outputMap,
-		}
-		input.ResourceOutputs = append(input.ResourceOutputs, resOutput)
+		
+		input.ResourceOutputs = append(input.ResourceOutputs, output)
 	}
 	
-	p.logf("  Provisioned %d resources", len(applyResult.Resources))
+	p.logf("  Provisioned %d resources", len(input.ResourceOutputs))
 	return nil
 }
 
