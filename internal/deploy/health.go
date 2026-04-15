@@ -101,10 +101,14 @@ func (h *HealthChecker) getDeploymentStatus(ctx context.Context, deploymentName 
 	}
 
 	// Convert to DeploymentStatus
+	replicas := int32(1)
+	if deployment.Spec.Replicas != nil {
+		replicas = *deployment.Spec.Replicas
+	}
 	status := &DeploymentStatus{
 		Name:               deployment.Name,
 		Namespace:          deployment.Namespace,
-		Replicas:           *deployment.Spec.Replicas,
+		Replicas:           replicas,
 		ReadyReplicas:      deployment.Status.ReadyReplicas,
 		UpdatedReplicas:    deployment.Status.UpdatedReplicas,
 		AvailableReplicas:  deployment.Status.AvailableReplicas,

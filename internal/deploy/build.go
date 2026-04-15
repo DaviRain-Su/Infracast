@@ -54,7 +54,7 @@ func (b *Builder) Build(ctx context.Context, appName, commit string) (*BuildResu
 	ctx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
 
-	imageTag := fmt.Sprintf("%s:%s", appName, commit[:7])
+	imageTag := fmt.Sprintf("%s:%s", appName, shortCommit(commit))
 
 	// Execute encore build
 	cmd := exec.CommandContext(ctx, "encore", "build", "docker", imageTag)
@@ -139,7 +139,7 @@ func (b *Builder) extractBuildMeta(output, appName, commit string) mapper.BuildM
 
 // GetLocalImageName returns the local image name before pushing to registry
 func (b *Builder) GetLocalImageName(appName, commit string) string {
-	return fmt.Sprintf("%s:%s", appName, commit[:7])
+	return fmt.Sprintf("%s:%s", appName, shortCommit(commit))
 }
 
 // ValidateBuildMeta validates that BuildMeta has required fields
@@ -177,7 +177,7 @@ func (b *Builder) StreamBuild(ctx context.Context, appName, commit string, outpu
 	ctx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
 
-	imageTag := fmt.Sprintf("%s:%s", appName, commit[:7])
+	imageTag := fmt.Sprintf("%s:%s", appName, shortCommit(commit))
 	cmd := exec.CommandContext(ctx, "encore", "build", "docker", imageTag)
 	if appRoot := os.Getenv("ENCORE_APP_ROOT"); appRoot != "" {
 		cmd.Dir = appRoot
@@ -222,4 +222,13 @@ func (b *Builder) StreamBuild(ctx context.Context, appName, commit string, outpu
 		Success:  true,
 		ImageTag: imageTag,
 	}, nil
+}
+
+// shortCommit returns the first 7 characters of a commit hash, or the full
+// string if shorter than 7, to avoid slice bounds panics on short inputs.
+func shortCommit(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
 }

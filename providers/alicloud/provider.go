@@ -207,7 +207,10 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	}
 
 	// Generate and set initial password
-	password := generateRandomPassword()
+	password, err := generateRandomPassword()
+	if err != nil {
+		return nil, fmt.Errorf("EPROV010: failed to generate password: %w", err)
+	}
 	username, err := p.setDBPassword(ctx, instanceID, defaultDBUsername(spec.Engine), password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set DB password: %w", err)
@@ -331,7 +334,10 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 	}
 
 	// Generate and set initial password
-	password := generateRandomPassword()
+	password, err := generateRandomPassword()
+	if err != nil {
+		return nil, fmt.Errorf("EPROV010: failed to generate password: %w", err)
+	}
 	if err := p.setCachePassword(ctx, instanceID, password); err != nil {
 		return nil, fmt.Errorf("failed to set Redis password: %w", err)
 	}
@@ -577,7 +583,7 @@ func isRedisCreateRetryable(err error) bool {
 }
 
 // generateRandomPassword generates a cryptographically secure random password
-func generateRandomPassword() string {
+func generateRandomPassword() (string, error) {
 	const (
 		length  = 16
 		upper   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -588,26 +594,37 @@ func generateRandomPassword() string {
 	)
 
 	p := make([]byte, length)
-	p[0] = pickRandChar(upper)
-	p[1] = pickRandChar(lower)
-	p[2] = pickRandChar(digits)
-	p[3] = pickRandChar(special)
+	var err error
+	if p[0], err = pickRandChar(upper); err != nil {
+		return "", err
+	}
+	if p[1], err = pickRandChar(lower); err != nil {
+		return "", err
+	}
+	if p[2], err = pickRandChar(digits); err != nil {
+		return "", err
+	}
+	if p[3], err = pickRandChar(special); err != nil {
+		return "", err
+	}
 	for i := 4; i < length; i++ {
-		p[i] = pickRandChar(all)
+		if p[i], err = pickRandChar(all); err != nil {
+			return "", err
+		}
 	}
 	secureShuffle(p)
-	return string(p)
+	return string(p), nil
 }
 
-func pickRandChar(charset string) byte {
+func pickRandChar(charset string) (byte, error) {
 	if charset == "" {
-		panic("empty charset")
+		return 0, fmt.Errorf("EPROV010: empty charset")
 	}
 	b := make([]byte, 1)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand failed: " + err.Error())
+		return 0, fmt.Errorf("EPROV010: crypto/rand failed: %w", err)
 	}
-	return charset[int(b[0])%len(charset)]
+	return charset[int(b[0])%len(charset)], nil
 }
 
 func secureShuffle(data []byte) {

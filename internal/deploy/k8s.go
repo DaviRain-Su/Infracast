@@ -331,13 +331,17 @@ func (k *K8sClient) WaitForDeployment(ctx context.Context, name string, timeout 
 			return fmt.Errorf("EDEPLOY050: deployment timeout after %v", timeout)
 		case <-ticker.C:
 			// Check deployment status
-			deployment, err := k.clientset.AppsV1().Deployments(k.namespace).Get(ctx, name, metav1.GetOptions{})
+			deployment, err := k.clientset.AppsV1().Deployments(k.namespace).Get(timeoutCtx, name, metav1.GetOptions{})
 			if err != nil {
 				return fmt.Errorf("EDEPLOY051: failed to get deployment status: %w", err)
 			}
 
 			// Check if deployment is ready
-			if deployment.Status.ReadyReplicas >= *deployment.Spec.Replicas {
+			desired := int32(1)
+			if deployment.Spec.Replicas != nil {
+				desired = *deployment.Spec.Replicas
+			}
+			if deployment.Status.ReadyReplicas >= desired {
 				return nil
 			}
 		}

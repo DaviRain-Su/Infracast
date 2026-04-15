@@ -175,3 +175,31 @@ func TestExtractBuildMeta_BuildImagePopulated(t *testing.T) {
 	assert.Equal(t, "abc1234567890", meta.BuildCommit)
 	assert.Contains(t, meta.Services, "api")
 }
+
+// TestShortCommit_BoundsCheck validates that shortCommit does not panic
+// on inputs shorter than 7 characters (v0.1.6 F1 regression).
+func TestShortCommit_BoundsCheck(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"abc1234567890", "abc1234"},
+		{"abc1234", "abc1234"},
+		{"abc", "abc"},
+		{"a", "a"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, shortCommit(tt.input))
+		})
+	}
+}
+
+// TestGetLocalImageName_ShortCommit validates no panic on short commit (v0.1.6 F1).
+func TestGetLocalImageName_ShortCommit(t *testing.T) {
+	builder := NewBuilder()
+	// Should not panic on short commit
+	name := builder.GetLocalImageName("myapp", "abc")
+	assert.Equal(t, "myapp:abc", name)
+}

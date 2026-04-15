@@ -229,3 +229,26 @@ func TestObjectStoreFields(t *testing.T) {
 	assert.Equal(t, "cn-hangzhou", obj.Region)
 	assert.Equal(t, "oss.example.com", obj.Endpoint)
 }
+
+// TestGetOrDefault_NilMap validates getOrDefault handles nil map safely (v0.1.6 F10 regression).
+func TestGetOrDefault_NilMap(t *testing.T) {
+	assert.Equal(t, "fallback", getOrDefault(nil, "key", "fallback"))
+	assert.Equal(t, "", getOrDefault(nil, "key", ""))
+}
+
+// TestGetOrDefault_MissingKey validates getOrDefault returns default for missing keys.
+func TestGetOrDefault_MissingKey(t *testing.T) {
+	m := map[string]string{"host": "localhost"}
+	assert.Equal(t, "localhost", getOrDefault(m, "host", ""))
+	assert.Equal(t, "default", getOrDefault(m, "missing", "default"))
+}
+
+// TestMapSQLServer_NilOutputMap validates mapSQLServer does not panic on nil Output map (v0.1.6 F10).
+func TestMapSQLServer_NilOutputMap(t *testing.T) {
+	g := NewGenerator()
+	output := ResourceOutput{Name: "mydb", Output: nil}
+	srv := g.mapSQLServer(output)
+	assert.Equal(t, "mydb", srv.Name)
+	assert.Equal(t, "", srv.Host, "should return empty string for nil map")
+	assert.Equal(t, 5432, srv.Port, "should return default port")
+}

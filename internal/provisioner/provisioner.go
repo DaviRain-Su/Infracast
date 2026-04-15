@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/DaviRain-Su/infracast/internal/credentials"
@@ -444,11 +445,13 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 	return result
 }
 
-// updateResourceStatus updates the status of a resource
+// updateResourceStatus updates the status of a resource (best-effort; logs error if upsert fails)
 func (p *Provisioner) updateResourceStatus(ctx context.Context, resource *state.InfraResource, status ResourceState, errMsg string) {
 	resource.Status = string(status)
 	resource.ErrorMsg = errMsg
-	p.store.UpsertResource(ctx, resource)
+	if err := p.store.UpsertResource(ctx, resource); err != nil {
+		fmt.Fprintf(os.Stderr, "[provisioner] warning: failed to update resource status for %s: %v\n", resource.ResourceName, err)
+	}
 }
 
 // Destroy destroys all resources in an environment

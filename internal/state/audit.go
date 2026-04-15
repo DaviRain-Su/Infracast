@@ -246,6 +246,7 @@ func (s *AuditStore) Query(ctx context.Context, opts QueryOptions) ([]AuditEvent
 	defer rows.Close()
 
 	var events []AuditEvent
+	var lastScanErr error
 	for rows.Next() {
 		var event AuditEvent
 		var timestamp int64
@@ -271,6 +272,7 @@ func (s *AuditStore) Query(ctx context.Context, opts QueryOptions) ([]AuditEvent
 			&requestID,
 		)
 		if err != nil {
+			lastScanErr = err
 			continue
 		}
 
@@ -291,7 +293,10 @@ func (s *AuditStore) Query(ctx context.Context, opts QueryOptions) ([]AuditEvent
 		events = append(events, event)
 	}
 
-	return events, rows.Err()
+	if err := rows.Err(); err != nil {
+		return events, err
+	}
+	return events, lastScanErr
 }
 
 // AuditLogOption is a functional option for configuring audit events

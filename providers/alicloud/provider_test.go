@@ -184,6 +184,27 @@ func TestProvisionPollConstants(t *testing.T) {
 	assert.Less(t, VPCPollInterval, VPCPollTimeout)
 }
 
+// TestGenerateRandomPassword_ReturnsErrorNotPanic validates that password generation
+// returns an error instead of panicking (v0.1.6 F4 regression).
+func TestGenerateRandomPassword_ReturnsErrorNotPanic(t *testing.T) {
+	// Normal case: should succeed
+	pw, err := generateRandomPassword()
+	assert.NoError(t, err)
+	assert.Len(t, pw, 16)
+
+	// Verify password contains required character classes
+	assert.Regexp(t, `[A-Z]`, pw, "must contain uppercase")
+	assert.Regexp(t, `[a-z]`, pw, "must contain lowercase")
+	assert.Regexp(t, `[0-9]`, pw, "must contain digit")
+}
+
+// TestPickRandChar_EmptyCharset_ReturnsError validates pickRandChar returns error on empty charset (v0.1.6 F4).
+func TestPickRandChar_EmptyCharset_ReturnsError(t *testing.T) {
+	_, err := pickRandChar("")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EPROV010")
+}
+
 func TestAlicloudInitRegistersProvider(t *testing.T) {
 	p, err := providers.Get("alicloud")
 	require.NoError(t, err)

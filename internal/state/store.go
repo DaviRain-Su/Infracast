@@ -147,7 +147,10 @@ func (s *Store) UpsertResource(ctx context.Context, resource *InfraResource) err
 
 	// For updates, check if any row was actually updated
 	if resource.StateVersion > 0 {
-		rowsAffected, _ := result.RowsAffected()
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("ESTATE003: failed to check rows affected: %w", err)
+		}
 		if rowsAffected == 0 {
 			return ErrConcurrentUpdate
 		}

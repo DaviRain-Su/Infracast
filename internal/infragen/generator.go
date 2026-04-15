@@ -123,24 +123,25 @@ func (g *Generator) Generate(outputs []ResourceOutput, meta mapper.BuildMeta, en
 
 // mapSQLServer maps resource output to SQL server config
 func (g *Generator) mapSQLServer(output ResourceOutput) SQLServer {
-	return SQLServer{
+	srv := SQLServer{
 		Name:     output.Name,
-		Host:     output.Output["host"],
-		Port:     parseInt(output.Output["port"], 5432),
-		Database: output.Output["database"],
-		User:     output.Output["user"],
-		Password: output.Output["password"],
+		Host:     getOrDefault(output.Output, "host", ""),
+		Port:     parseInt(getOrDefault(output.Output, "port", ""), 5432),
+		Database: getOrDefault(output.Output, "database", output.Name),
+		User:     getOrDefault(output.Output, "user", ""),
+		Password: getOrDefault(output.Output, "password", ""),
 	}
+	return srv
 }
 
 // mapRedis maps resource output to Redis config
 func (g *Generator) mapRedis(output ResourceOutput) RedisServer {
 	return RedisServer{
 		Name:      output.Name,
-		Host:      output.Output["host"],
-		Port:      parseInt(output.Output["port"], 6379),
-		Auth:      output.Output["auth"],
-		KeyPrefix: output.Output["key_prefix"],
+		Host:      getOrDefault(output.Output, "host", ""),
+		Port:      parseInt(getOrDefault(output.Output, "port", ""), 6379),
+		Auth:      getOrDefault(output.Output, "auth", ""),
+		KeyPrefix: getOrDefault(output.Output, "key_prefix", ""),
 	}
 }
 
@@ -148,13 +149,24 @@ func (g *Generator) mapRedis(output ResourceOutput) RedisServer {
 func (g *Generator) mapObjectStore(output ResourceOutput) ObjectStore {
 	return ObjectStore{
 		Name:      output.Name,
-		Provider:  output.Output["provider"],
-		Region:    output.Output["region"],
-		Endpoint:  output.Output["endpoint"],
-		Bucket:    output.Output["bucket"],
-		AccessKey: output.Output["access_key"],
-		SecretKey: output.Output["secret_key"],
+		Provider:  getOrDefault(output.Output, "provider", ""),
+		Region:    getOrDefault(output.Output, "region", ""),
+		Endpoint:  getOrDefault(output.Output, "endpoint", ""),
+		Bucket:    getOrDefault(output.Output, "bucket", ""),
+		AccessKey: getOrDefault(output.Output, "access_key", ""),
+		SecretKey: getOrDefault(output.Output, "secret_key", ""),
 	}
+}
+
+// getOrDefault safely retrieves a key from a map, returning defaultVal if missing or nil map
+func getOrDefault(m map[string]string, key, defaultVal string) string {
+	if m == nil {
+		return defaultVal
+	}
+	if v, ok := m[key]; ok {
+		return v
+	}
+	return defaultVal
 }
 
 // Merge deep-merges two configurations, with override taking precedence
