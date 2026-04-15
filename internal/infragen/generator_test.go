@@ -27,26 +27,28 @@ func TestGeneratorGenerate(t *testing.T) {
 				"host":     "rm-xxx.mysql.rds.aliyuncs.com",
 				"port":     "3306",
 				"database": "myapp",
-				"username": "admin",
+				"user":     "admin",
 				"password": "secret",
-				"ssl_mode": "require",
 			},
 		},
 		{
 			Type: "redis",
 			Name: "cache",
 			Output: map[string]string{
-				"host":     "r-xxx.redis.rds.aliyuncs.com",
-				"port":     "6379",
-				"password": "redis_secret",
+				"host":       "r-xxx.redis.rds.aliyuncs.com",
+				"port":       "6379",
+				"auth":       "redis_secret",
+				"key_prefix": "cache:",
 			},
 		},
 		{
 			Type: "object_storage",
 			Name: "assets",
 			Output: map[string]string{
-				"endpoint":  "oss-cn-hangzhou.aliyuncs.com",
-				"bucket":    "myapp-assets",
+				"provider":   "s3-compatible",
+				"region":     "cn-hangzhou",
+				"endpoint":   "oss-cn-hangzhou.aliyuncs.com",
+				"bucket":     "myapp-assets",
 				"access_key": "AKxxx",
 				"secret_key": "SKxxx",
 			},
@@ -57,8 +59,8 @@ func TestGeneratorGenerate(t *testing.T) {
 		AppName: "myapp",
 	}
 
-	cfg := g.Generate(outputs, meta, "dev")
-
+	cfg, err := g.Generate(outputs, meta, "dev")
+	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, "1.0", cfg.Version)
 	assert.Equal(t, "myapp", cfg.AppName)
@@ -83,6 +85,8 @@ func TestGeneratorGenerate(t *testing.T) {
 	assert.Len(t, cfg.ObjectStorage, 1)
 	obj, ok := cfg.ObjectStorage["assets"]
 	assert.True(t, ok)
+	assert.Equal(t, "s3-compatible", obj.Provider)
+	assert.Equal(t, "cn-hangzhou", obj.Region)
 	assert.Equal(t, "oss-cn-hangzhou.aliyuncs.com", obj.Endpoint)
 	assert.Equal(t, "myapp-assets", obj.Bucket)
 }
@@ -98,7 +102,7 @@ func TestGeneratorMerge(t *testing.T) {
 		SQLServers: map[string]SQLServer{
 			"main": {Name: "main", Host: "old-host"},
 		},
-		Redis: map[string]Redis{
+		Redis: map[string]RedisServer{
 			"cache": {Name: "cache", Host: "old-redis"},
 		},
 	}
@@ -162,11 +166,11 @@ func TestParseInt(t *testing.T) {
 // TestInfraCfgFields validates config struct fields
 func TestInfraCfgFields(t *testing.T) {
 	cfg := &InfraCfg{
-		Version:     "1.0",
-		AppName:     "myapp",
-		Environment: "production",
-		SQLServers:  make(map[string]SQLServer),
-		Redis:       make(map[string]Redis),
+		Version:       "1.0",
+		AppName:       "myapp",
+		Environment:   "production",
+		SQLServers:    make(map[string]SQLServer),
+		Redis:         make(map[string]RedisServer),
 		ObjectStorage: make(map[string]ObjectStore),
 	}
 
@@ -182,33 +186,38 @@ func TestSQLServerFields(t *testing.T) {
 		Host:     "localhost",
 		Port:     5432,
 		Database: "mydb",
-		Username: "admin",
+		User:     "admin",
 		Password: "secret",
-		SSLMode:  "require",
 	}
 
 	assert.Equal(t, "main", sql.Name)
 	assert.Equal(t, "localhost", sql.Host)
 	assert.Equal(t, 5432, sql.Port)
+	assert.Equal(t, "admin", sql.User)
 }
 
 // TestRedisFields validates Redis struct
 func TestRedisFields(t *testing.T) {
-	redis := Redis{
-		Name:     "cache",
-		Host:     "localhost",
-		Port:     6379,
-		Password: "secret",
+	redis := RedisServer{
+		Name:      "cache",
+		Host:      "localhost",
+		Port:      6379,
+		Auth:      "secret",
+		KeyPrefix: "app:",
 	}
 
 	assert.Equal(t, "cache", redis.Name)
 	assert.Equal(t, 6379, redis.Port)
+	assert.Equal(t, "secret", redis.Auth)
+	assert.Equal(t, "app:", redis.KeyPrefix)
 }
 
 // TestObjectStoreFields validates object store struct
 func TestObjectStoreFields(t *testing.T) {
 	obj := ObjectStore{
 		Name:      "assets",
+		Provider:  "s3-compatible",
+		Region:    "cn-hangzhou",
 		Endpoint:  "oss.example.com",
 		Bucket:    "mybucket",
 		AccessKey: "AKxxx",
@@ -216,5 +225,7 @@ func TestObjectStoreFields(t *testing.T) {
 	}
 
 	assert.Equal(t, "assets", obj.Name)
+	assert.Equal(t, "s3-compatible", obj.Provider)
+	assert.Equal(t, "cn-hangzhou", obj.Region)
 	assert.Equal(t, "oss.example.com", obj.Endpoint)
 }

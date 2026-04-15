@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DaviRain-Su/infracast/internal/infragen"
+	"github.com/DaviRain-Su/infracast/internal/mapper"
 	"github.com/DaviRain-Su/infracast/internal/state"
 )
 
@@ -24,19 +26,20 @@ type Pipeline struct {
 
 // PipelineInput contains all inputs for pipeline execution
 type PipelineInput struct {
-	AppName       string
-	Env           string
-	Commit        string
-	ImageTag      string
-	ConfigPath    string
-	LocalImage    string
-	Replicas      int
-	Port          int
-	EnvVars       map[string]string
-	ACRNamespace  string
-	ACRRegion     string
-	ACKubeConfig  string
-	ACKClusterID  string
+	AppName         string
+	Env             string
+	Commit          string
+	ImageTag        string
+	ConfigPath      string
+	LocalImage      string
+	Replicas        int
+	Port            int
+	EnvVars         map[string]string
+	ACRNamespace    string
+	ACRRegion       string
+	ACKubeConfig    string
+	ACKClusterID    string
+	ResourceOutputs []infragen.ResourceOutput // Provisioned resource outputs for config generation
 }
 
 // PipelineResult contains the outcome of pipeline execution
@@ -253,7 +256,29 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 // stepGenerateConfig generates infracfg.json
 func (p *Pipeline) stepGenerateConfig(ctx context.Context, input *PipelineInput) error {
 	p.log("  Generating infracfg.json...")
-	// TODO: Generate from provisioner outputs
+	
+	// Create config generator
+	generator := infragen.NewGenerator()
+	
+	// Generate configuration from resource outputs
+	// TODO: Get BuildMeta from build step
+	meta := mapper.BuildMeta{AppName: input.AppName}
+	cfg, err := generator.Generate(input.ResourceOutputs, meta, input.Env)
+	if err != nil {
+		return fmt.Errorf("EIGEN001: failed to generate config: %w", err)
+	}
+	
+	// Write configuration to file
+	configPath := input.ConfigPath
+	if configPath == "" {
+		configPath = "infracfg.json"
+	}
+	
+	if err := generator.Write(cfg, configPath); err != nil {
+		return fmt.Errorf("EIGEN003: failed to write config: %w", err)
+	}
+	
+	p.log("  Generated: " + configPath)
 	return nil
 }
 

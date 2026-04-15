@@ -9,14 +9,21 @@ import (
 	"github.com/DaviRain-Su/infracast/internal/mapper"
 )
 
+// Error codes for config generator
+const (
+	EIGEN001 = "EIGEN001" // Unsupported resource type
+	EIGEN002 = "EIGEN002" // Missing required field
+	EIGEN003 = "EIGEN003" // Write error
+)
+
 // InfraCfg represents the infrastructure configuration structure
 type InfraCfg struct {
-	Version       string                 `json:"version"`
-	AppName       string                 `json:"app_name"`
-	Environment   string                 `json:"environment"`
-	SQLServers    map[string]SQLServer   `json:"sql_servers,omitempty"`
-	Redis         map[string]Redis       `json:"redis,omitempty"`
-	ObjectStorage map[string]ObjectStore `json:"object_storage,omitempty"`
+	Version       string                   `json:"version"`
+	AppName       string                   `json:"app_name"`
+	Environment   string                   `json:"environment"`
+	SQLServers    map[string]SQLServer     `json:"sql_servers,omitempty"`
+	Redis         map[string]RedisServer   `json:"redis,omitempty"`
+	ObjectStorage map[string]ObjectStore   `json:"object_storage,omitempty"`
 }
 
 // SQLServer represents a SQL database server configuration
@@ -25,22 +32,30 @@ type SQLServer struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	Database string `json:"database"`
-	Username string `json:"username"`
+	User     string `json:"user"`
 	Password string `json:"password,omitempty"`
-	SSLMode  string `json:"ssl_mode"`
+	TLS      *TLSConfig `json:"tls,omitempty"`
 }
 
-// Redis represents a Redis cache configuration
-type Redis struct {
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Password string `json:"password,omitempty"`
+// TLSConfig represents TLS configuration
+type TLSConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+// RedisServer represents a Redis cache configuration
+type RedisServer struct {
+	Name      string `json:"name"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Auth      string `json:"auth,omitempty"`
+	KeyPrefix string `json:"key_prefix,omitempty"`
 }
 
 // ObjectStore represents an object storage configuration
 type ObjectStore struct {
 	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	Region    string `json:"region,omitempty"`
 	Endpoint  string `json:"endpoint"`
 	Bucket    string `json:"bucket"`
 	AccessKey string `json:"access_key,omitempty"`
@@ -67,13 +82,13 @@ func NewGenerator() *Generator {
 }
 
 // Generate creates an InfraCfg from resource outputs and build metadata
-func (g *Generator) Generate(outputs []ResourceOutput, meta mapper.BuildMeta, env string) *InfraCfg {
+func (g *Generator) Generate(outputs []ResourceOutput, meta mapper.BuildMeta, env string) (*InfraCfg, error) {
 	cfg := &InfraCfg{
 		Version:     g.version,
 		AppName:     meta.AppName,
 		Environment: env,
 		SQLServers:  make(map[string]SQLServer),
-		Redis:       make(map[string]Redis),
+		Redis:       make(map[string]RedisServer),
 		ObjectStorage: make(map[string]ObjectStore),
 	}
 
@@ -86,10 +101,12 @@ func (g *Generator) Generate(outputs []ResourceOutput, meta mapper.BuildMeta, en
 			cfg.Redis[output.Name] = g.mapRedis(output)
 		case "object_storage", "oss":
 			cfg.ObjectStorage[output.Name] = g.mapObjectStore(output)
+		default:
+			return nil, fmt.Errorf("%s: unsupported resource type %s", EIGEN001, output.Type)
 		}
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 // mapSQLServer maps resource output to SQL server config
@@ -99,19 +116,19 @@ func (g *Generator) mapSQLServer(output ResourceOutput) SQLServer {
 		Host:     output.Output["host"],
 		Port:     parseInt(output.Output["port"], 5432),
 		Database: output.Output["database"],
-		Username: output.Output["username"],
+		User:     output.Output["user"],
 		Password: output.Output["password"],
-		SSLMode:  output.Output["ssl_mode"],
 	}
 }
 
 // mapRedis maps resource output to Redis config
-func (g *Generator) mapRedis(output ResourceOutput) Redis {
-	return Redis{
-		Name:     output.Name,
-		Host:     output.Output["host"],
-		Port:     parseInt(output.Output["port"], 6379),
-		Password: output.Output["password"],
+func (g *Generator) mapRedis(output ResourceOutput) RedisServer {
+	return RedisServer{
+		Name:      output.Name,
+		Host:      output.Output["host"],
+		Port:      parseInt(output.Output["port"], 6379),
+		Auth:      output.Output["auth"],
+		KeyPrefix: output.Output["key_prefix"],
 	}
 }
 
@@ -119,6 +136,8 @@ func (g *Generator) mapRedis(output ResourceOutput) Redis {
 func (g *Generator) mapObjectStore(output ResourceOutput) ObjectStore {
 	return ObjectStore{
 		Name:      output.Name,
+		Provider:  output.Output["provider"],
+		Region:    output.Output["region"],
 		Endpoint:  output.Output["endpoint"],
 		Bucket:    output.Output["bucket"],
 		AccessKey: output.Output["access_key"],
@@ -154,19 +173,56 @@ func (g *Generator) mergeSQLServers(base, override map[string]SQLServer) map[str
 		result[k] = v
 	}
 	for k, v := range override {
-		result[k] = v
+		if existing, ok := result[k]; ok {
+			// Field-level merge: override non-zero values
+			if v.Host != "" {
+				existing.Host = v.Host
+			}
+			if v.Port != 0 {
+				existing.Port = v.Port
+			}
+			if v.Database != "" {
+				existing.Database = v.Database
+			}
+			if v.User != "" {
+				existing.User = v.User
+			}
+			if v.Password != "" {
+				existing.Password = v.Password
+			}
+			result[k] = existing
+		} else {
+			result[k] = v
+		}
 	}
 	return result
 }
 
 // mergeRedis merges Redis configurations
-func (g *Generator) mergeRedis(base, override map[string]Redis) map[string]Redis {
-	result := make(map[string]Redis)
+func (g *Generator) mergeRedis(base, override map[string]RedisServer) map[string]RedisServer {
+	result := make(map[string]RedisServer)
 	for k, v := range base {
 		result[k] = v
 	}
 	for k, v := range override {
-		result[k] = v
+		if existing, ok := result[k]; ok {
+			// Field-level merge: override non-zero values
+			if v.Host != "" {
+				existing.Host = v.Host
+			}
+			if v.Port != 0 {
+				existing.Port = v.Port
+			}
+			if v.Auth != "" {
+				existing.Auth = v.Auth
+			}
+			if v.KeyPrefix != "" {
+				existing.KeyPrefix = v.KeyPrefix
+			}
+			result[k] = existing
+		} else {
+			result[k] = v
+		}
 	}
 	return result
 }
@@ -178,7 +234,30 @@ func (g *Generator) mergeObjectStorage(base, override map[string]ObjectStore) ma
 		result[k] = v
 	}
 	for k, v := range override {
-		result[k] = v
+		if existing, ok := result[k]; ok {
+			// Field-level merge: override non-zero values
+			if v.Provider != "" {
+				existing.Provider = v.Provider
+			}
+			if v.Region != "" {
+				existing.Region = v.Region
+			}
+			if v.Endpoint != "" {
+				existing.Endpoint = v.Endpoint
+			}
+			if v.Bucket != "" {
+				existing.Bucket = v.Bucket
+			}
+			if v.AccessKey != "" {
+				existing.AccessKey = v.AccessKey
+			}
+			if v.SecretKey != "" {
+				existing.SecretKey = v.SecretKey
+			}
+			result[k] = existing
+		} else {
+			result[k] = v
+		}
 	}
 	return result
 }
@@ -186,16 +265,16 @@ func (g *Generator) mergeObjectStorage(base, override map[string]ObjectStore) ma
 // Write writes the configuration to a file
 func (g *Generator) Write(cfg *InfraCfg, path string) error {
 	if cfg == nil {
-		return fmt.Errorf("cannot write nil config")
+		return fmt.Errorf("%s: cannot write nil config", EIGEN003)
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return fmt.Errorf("%s: failed to marshal config: %w", EIGEN003, err)
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return fmt.Errorf("%s: failed to write config file: %w", EIGEN003, err)
 	}
 
 	return nil
