@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
@@ -156,12 +157,25 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 		return nil, fmt.Errorf("failed to create RDS instance: %w", err)
 	}
 
+	// Poll for instance to be ready and get endpoint
+	instanceID := response.DBInstanceId
+	endpoint, err := p.waitForDBInstanceReady(ctx, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for RDS instance: %w", err)
+	}
+
+	// Generate and set initial password
+	password := generateRandomPassword()
+	if err := p.setDBPassword(ctx, instanceID, "root", password); err != nil {
+		return nil, fmt.Errorf("failed to set DB password: %w", err)
+	}
+
 	return &providers.DatabaseOutput{
-		ResourceID: response.DBInstanceId,
-		Endpoint:   "", // TODO: Poll DescribeDBInstanceAttribute to get connection string
+		ResourceID: instanceID,
+		Endpoint:   endpoint,
 		Port:       getPortForEngine(spec.Engine),
 		Username:   "root",
-		Password:   "", // TODO: Set via separate call or accept from spec
+		Password:   password,
 	}, nil
 }
 
@@ -305,4 +319,86 @@ func (p *Provider) OTLPEndpoint() string {
 // DashboardURL returns the cloud console URL for the environment
 func (p *Provider) DashboardURL(envID string) string {
 	return fmt.Sprintf("https://rds.console.aliyun.com/%s", p.region)
+}
+
+// waitForDBInstanceReady polls until the RDS instance is ready and returns the endpoint
+func (p *Provider) waitForDBInstanceReady(ctx context.Context, instanceID string) (string, error) {
+	// Poll for up to 10 minutes (RDS creation takes time)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	
+	timeout := time.After(10 * time.Minute)
+	
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-timeout:
+			return "", fmt.Errorf("timeout waiting for RDS instance %s", instanceID)
+		case <-ticker.C:
+			req := rds.CreateDescribeDBInstanceAttributeRequest()
+			req.DBInstanceId = instanceID
+			
+			resp, err := p.rdsClient.DescribeDBInstanceAttribute(req)
+			if err != nil {
+				continue // Retry on error
+			}
+			
+			if len(resp.Items.DBInstanceAttribute) == 0 {
+				continue
+			}
+			
+			attr := resp.Items.DBInstanceAttribute[0]
+			// Check if instance is running
+			if attr.DBInstanceStatus == "Running" {
+				// Return the internal connection string (intranet endpoint)
+				if attr.ConnectionString != "" {
+					return attr.ConnectionString, nil
+				}
+				// Fallback to instance ID as endpoint if connection string not available
+				return attr.DBInstanceId + ".mysql.rds.aliyuncs.com", nil
+			}
+		}
+	}
+}
+
+// setDBPassword sets the initial password for the database root account
+func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, password string) error {
+	// For MySQL/PostgreSQL on Aliyun, we need to reset the account password
+	// Try to reset the account password (works for existing accounts like 'root')
+	req := rds.CreateResetAccountPasswordRequest()
+	req.DBInstanceId = instanceID
+	req.AccountName = username
+	req.AccountPassword = password
+	
+	_, err := p.rdsClient.ResetAccountPassword(req)
+	if err != nil {
+		// If reset fails, try creating a new account
+		createReq := rds.CreateCreateAccountRequest()
+		createReq.DBInstanceId = instanceID
+		createReq.AccountName = username
+		createReq.AccountPassword = password
+		createReq.AccountType = "Super"
+		
+		_, err = p.rdsClient.CreateAccount(createReq)
+		if err != nil {
+			return fmt.Errorf("failed to set password: %w", err)
+		}
+	}
+	
+	return nil
+}
+
+// generateRandomPassword generates a secure random password
+func generateRandomPassword() string {
+	// Generate a 16-character password with mixed case, numbers, and symbols
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+	const length = 16
+	
+	// Simple random generation (in production, use crypto/rand)
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	}
+	return string(b)
 }

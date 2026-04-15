@@ -342,9 +342,19 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 			if spec.ObjectStorageSpec == nil {
 				continue
 			}
-			// TODO: Implement ProvisionObjectStorage
-			p.logf("  Skipping object storage %s (not yet implemented)", spec.ObjectStorageSpec.Name)
-			continue
+			ossOutput, err := provider.ProvisionObjectStorage(ctx, *spec.ObjectStorageSpec)
+			if err != nil {
+				return fmt.Errorf("EDEPLOY075: failed to provision OSS %s: %w", spec.ObjectStorageSpec.Name, err)
+			}
+			output = infragen.ResourceOutput{
+				Type: "object_storage",
+				Name: spec.ObjectStorageSpec.Name,
+				Output: map[string]string{
+					"endpoint": ossOutput.Endpoint,
+					"bucket":   ossOutput.BucketName,
+					"region":   ossOutput.Region,
+				},
+			}
 			
 		default:
 			p.logf("  Unknown resource type: %s", spec.Type)
