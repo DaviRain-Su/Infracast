@@ -4,6 +4,23 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.2.0] — 2026-04-15
+
+### Added
+
+- **`status --output json|yaml`**: Structured output for CI/CD integration via `--output json` or `--output yaml`. Default table behavior unchanged
+- **Error observability in status**: Failed resources now show actionable hints (7 known patterns: EPROV001, EPROV003, EDEPLOY076, NotEnoughBalance, timeout, unauthorized, quota)
+- **`--set key=value` config override**: `infracast deploy --set region=cn-shanghai --set replicas=3` overrides config file values. Priority: CLI `--set` > env-specific YAML > file-level YAML > defaults
+- **`infracast rollback` command**: Image-based rollback via `infracast rollback --env dev --image <tag>`. Updates K8s deployment, waits for stabilization, runs health check, logs to audit store with trace ID
+
+### Fixed
+
+- **Nil `Spec.Replicas` in rollback**: Added nil guard in `isRollbackStable` (same pattern as v0.1.6 F3)
+
+### Known Limitations
+
+- `rollback` updates `container[0]` only — multi-container pods would need extension (single-container is the current Infracast pattern)
+
 ## [v0.1.6] — 2026-04-15
 
 ### Fixed

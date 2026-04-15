@@ -1,9 +1,63 @@
-# Release Notes: v0.1.6
+# Release Notes: v0.2.0
+
+**Date**: 2026-04-15
+**Status**: Feature Release (single-cloud, Alicloud only)
+
+---
+
+## What's New in v0.2.0
+
+### Structured Status Output
+
+```bash
+# JSON output for CI/CD pipelines
+infracast status --output json
+
+# YAML output
+infracast status --env dev --output yaml
+```
+
+`infracast status` now supports `--output json` and `--output yaml` for machine-readable output. Default table behavior is unchanged.
+
+Failed resources include actionable error hints for 7 known patterns (missing credentials, balance, timeout, quota, etc.).
+
+### Config Override (`--set`)
+
+```bash
+# Override region and replica count at deploy time
+infracast deploy --set region=cn-shanghai --set replicas=3
+```
+
+CLI `--set` values take highest priority over environment-specific and file-level YAML configuration. Supported keys: `region`, `replicas`.
+
+### Image-Based Rollback
+
+```bash
+# Rollback to a specific image version
+infracast rollback --env dev --image registry.cn-hangzhou.aliyuncs.com/infracast/my-app:abc1234
+```
+
+New `infracast rollback` command updates the K8s deployment to a specified image, waits for rollout stabilization, verifies health, and logs the operation to the audit store with a trace ID.
+
+### Regression Tests
+
+- 14 new tests for `--set` parsing, override priority, rollback command structure, and pipeline input construction
+- 7 tests for structured output (JSON/YAML marshalling, env status builder, error hints)
+
+### Known Limitations
+
+| Limitation | Impact | Workaround |
+|-----------|--------|------------|
+| `rollback` updates `container[0]` only | Multi-container pods not supported | Single-container is the current Infracast pattern |
+| ACK Verify deferred | Full E2E deploy needs ACK + sufficient balance | Use `--dry-run` for validation |
+| Multi-cloud frozen | Only Alicloud supported | By design for v0.x |
+
+---
+
+## Previous Release: v0.1.6
 
 **Date**: 2026-04-15
 **Status**: Patch Release (single-cloud, Alicloud only)
-
----
 
 ## What's Fixed in v0.1.6
 
