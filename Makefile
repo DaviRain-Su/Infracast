@@ -27,6 +27,10 @@ test: ## Run all tests
 	@echo "Running tests..."
 	@go test -v -race ./...
 
+regression: ## Run local regression suite (fmt/vet/test/build/smoke)
+	@echo "Running regression suite..."
+	@./scripts/regression.sh
+
 lint: ## Run linter (requires golangci-lint)
 	@echo "Running linter..."
 	@golangci-lint run ./...
