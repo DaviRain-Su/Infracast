@@ -232,19 +232,8 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 		instanceClass = "redis.master.mid.default"
 	}
 
-	request := r_kvstore.CreateCreateInstanceRequest()
-	request.VpcId = vpcID
-	request.VSwitchId = vswID
-	request.RegionId = p.region
-	request.InstanceClass = instanceClass
-	request.InstanceType = "Redis"
-	request.EngineVersion = spec.Version
-	if request.EngineVersion == "" {
-		request.EngineVersion = "5.0"
-	}
-
-	// Execute creation
-	response, err := p.kvstoreClient.CreateInstance(request)
+	// Try creating Redis with zone fallback (similar to RDS approach)
+	response, err := p.createRedisWithZoneFallback(vpcID, vswID, instanceClass, spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Redis instance: %w", err)
 	}
@@ -504,6 +493,89 @@ func (p *Provider) waitForCacheInstanceReady(ctx context.Context, instanceID str
 			}
 		}
 	}
+}
+
+// createRedisWithZoneFallback tries to create Redis with the given VSwitch, and falls back
+// to creating a new VSwitch in a different zone if the current zone doesn't support Redis
+func (p *Provider) createRedisWithZoneFallback(vpcID, vswID, instanceClass string, spec providers.CacheSpec) (*r_kvstore.CreateInstanceResponse, error) {
+	request := r_kvstore.CreateCreateInstanceRequest()
+	request.VpcId = vpcID
+	request.VSwitchId = vswID
+	request.RegionId = p.region
+	request.InstanceClass = instanceClass
+	request.InstanceType = "Redis"
+	request.EngineVersion = spec.Version
+	if request.EngineVersion == "" {
+		request.EngineVersion = "5.0"
+	}
+
+	// Try creating with the provided VSwitch first
+	resp, err := p.kvstoreClient.CreateInstance(request)
+	if err == nil {
+		return resp, nil
+	}
+
+	// If zone not supported, try creating VSwitch in other zones
+	if strings.Contains(err.Error(), "InvalidvSwitchId") || strings.Contains(err.Error(), "zone not supported") {
+		return p.createRedisWithNewVSwitch(vpcID, instanceClass, spec)
+	}
+
+	return nil, err
+}
+
+// createRedisWithNewVSwitch creates a new VSwitch in a different zone for Redis
+func (p *Provider) createRedisWithNewVSwitch(vpcID, instanceClass string, spec providers.CacheSpec) (*r_kvstore.CreateInstanceResponse, error) {
+	// Get available zones for Redis
+	zoneReq := r_kvstore.CreateDescribeAvailableResourceRequest()
+	zoneReq.RegionId = p.region
+	zoneReq.InstanceChargeType = "PostPaid"
+	
+	zoneResp, err := p.kvstoreClient.DescribeAvailableResource(zoneReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe available zones for Redis: %w", err)
+	}
+
+	// Try each available zone
+	for _, zone := range zoneResp.AvailableZones.AvailableZone {
+		zoneID := zone.ZoneId
+		
+		// Create VSwitch in this zone
+		vswReq := vpc.CreateCreateVSwitchRequest()
+		vswReq.RegionId = p.region
+		vswReq.VpcId = vpcID
+		vswReq.ZoneId = zoneID
+		vswReq.CidrBlock = "10.0.1.0/24" // Different CIDR for Redis
+		vswReq.VSwitchName = fmt.Sprintf("infracast-redis-%s", zoneID)
+		
+		vswResp, err := p.vpcClient.CreateVSwitch(vswReq)
+		if err != nil {
+			continue // Try next zone
+		}
+		
+		// Try creating Redis with this VSwitch
+		request := r_kvstore.CreateCreateInstanceRequest()
+		request.VpcId = vpcID
+		request.VSwitchId = vswResp.VSwitchId
+		request.RegionId = p.region
+		request.InstanceClass = instanceClass
+		request.InstanceType = "Redis"
+		request.EngineVersion = spec.Version
+		if request.EngineVersion == "" {
+			request.EngineVersion = "5.0"
+		}
+		
+		resp, err := p.kvstoreClient.CreateInstance(request)
+		if err == nil {
+			return resp, nil
+		}
+		
+		// Clean up the VSwitch we created if Redis creation failed
+		deleteReq := vpc.CreateDeleteVSwitchRequest()
+		deleteReq.VSwitchId = vswResp.VSwitchId
+		_, _ = p.vpcClient.DeleteVSwitch(deleteReq) // Best effort cleanup
+	}
+	
+	return nil, fmt.Errorf("failed to create Redis in any available zone")
 }
 
 // setCachePassword sets the password for the Redis instance
