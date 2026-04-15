@@ -4,6 +4,19 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.1.3] — 2026-04-15
+
+### Changed
+
+- **`provision` command**: Wired to `internal/provisioner` — now loads `infracast.yaml`, validates credentials, creates Alicloud provider, and calls real provisioning pipeline (was a stub printing text)
+- **`deploy` step functions**: Wired to `internal/deploy.Pipeline.Execute()` — build, push, provision, k8s-deploy, verify now delegate to real pipeline (were `time.Sleep` placeholders)
+- **`loadDeployConfig`**: Reads `infracast.yaml` via `config.Load()` with environment-specific overrides, falls back to defaults when file is missing
+- **`validateEnvironment`**: Queries state store for user-created environments, falls back to well-known defaults (dev/staging/production/local); error message now guides user to `env create`
+
+### Fixed
+
+- **Environment validation mismatch**: `deploy --env <name>` now accepts any environment created via `env create`, not just a hardcoded whitelist of 4 names
+
 ## [v0.1.2] — 2026-04-15
 
 ### Fixed

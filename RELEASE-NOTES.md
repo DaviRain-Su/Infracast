@@ -1,21 +1,38 @@
-# Release Notes: v0.1.2
+# Release Notes: v0.1.3
 
 **Date**: 2026-04-15
 **Status**: Patch Release (single-cloud, Alicloud only)
 
 ---
 
-## What's Fixed in v0.1.2
+## Breaking Behavior Change in v0.1.3
 
-- **`env create` unblocked**: Schema CHECK constraint now accepts `environment` resource type — `env create` was silently failing at DB level
-- **Clean resource counts**: Internal `_env_meta` records filtered from `status` and `env` output — no more phantom resource in counts
-- **`env list` shows real metadata**: Provider and region parsed from state store instead of hardcoded `alicloud`/`-`
-- **Consistent status colors**: `env show` now uses same green/red/yellow scheme as `status` command
-- **Better error guidance**: `ECFG005` now tells you `(v0.1.x supports alicloud only)` instead of just "unsupported provider"
+**`infracast provision` and `infracast deploy` now execute real cloud operations.** In v0.1.0–v0.1.2, these commands were stubs that printed text or slept briefly. Starting with v0.1.3, they delegate to the internal provisioner and deploy pipeline, which will create real Alicloud resources when credentials are configured.
 
-## What's New in v0.1.2
+If you run `infracast provision` or `infracast deploy` with valid `ALICLOUD_ACCESS_KEY` and `ALICLOUD_SECRET_KEY`, real resources will be created and billed. Use `--dry-run` to preview.
 
-- **27 regression tests** added for deploy, provision, and destroy command paths (structure, flags, validation, safety defaults)
+## What's Changed in v0.1.3
+
+- **`infracast provision`** now reads `infracast.yaml`, validates Alicloud credentials, maps config to resource specs, and calls the provisioner pipeline. Missing config returns `ECFG001`; missing credentials returns `EPROV001`.
+- **`infracast deploy`** step functions (build/push/provision/k8s-deploy/verify) delegate to `Pipeline.Execute()` instead of placeholder sleeps.
+- **`loadDeployConfig`** reads `infracast.yaml` with environment-specific overrides, falls back to defaults when file is missing.
+- **`validateEnvironment`** queries the state store for user-created environments. Custom environments created via `env create` are now accepted by `deploy --env`. Error message guides user to `env create`.
+
+---
+
+## Previous Release: v0.1.2
+
+**Date**: 2026-04-15
+**Status**: Patch Release (single-cloud, Alicloud only)
+
+### What's Fixed in v0.1.2
+
+- **`env create` unblocked**: Schema CHECK constraint now accepts `environment` resource type
+- **Clean resource counts**: Internal `_env_meta` records filtered from `status` and `env` output
+- **`env list` shows real metadata**: Provider and region parsed from state store
+- **Consistent status colors**: `env show` aligned with `status` command
+- **Better error guidance**: `ECFG005` includes `(v0.1.x supports alicloud only)`
+- **27 regression tests** added for deploy, provision, and destroy command paths
 
 ---
 
