@@ -12,10 +12,12 @@ import (
 	"github.com/DaviRain-Su/infracast/internal/infragen"
 	"github.com/DaviRain-Su/infracast/internal/mapper"
 	"github.com/DaviRain-Su/infracast/internal/state"
+	"github.com/DaviRain-Su/infracast/providers/alicloud"
 )
 
 // Pipeline orchestrates the full deployment process
 type Pipeline struct {
+	builder         *Builder
 	acrClient       *ACRClient
 	k8sClient       *K8sClient
 	healthChecker   *HealthChecker
@@ -40,6 +42,9 @@ type PipelineInput struct {
 	ACKubeConfig    string
 	ACKClusterID    string
 	ResourceOutputs []infragen.ResourceOutput // Provisioned resource outputs for config generation
+	BuildResult     *BuildResult              // Build step output
+	AliAccessKey    string                    // AliCloud access key
+	AliSecretKey    string                    // AliCloud secret key
 }
 
 // PipelineResult contains the outcome of pipeline execution
@@ -222,12 +227,29 @@ func (p *Pipeline) finalizeResult(result *PipelineResult, start time.Time, exitC
 	return result
 }
 
-// stepBuild executes encore build
+// stepBuild executes encore build docker
 func (p *Pipeline) stepBuild(ctx context.Context, input *PipelineInput) error {
 	p.log("  Building application...")
-	// TODO: Execute `encore build docker <tag>`
-	// Parse output for image tag
-	// Extract BuildMeta
+	
+	if p.builder == nil {
+		p.builder = NewBuilder()
+	}
+	
+	// Execute encore build
+	buildResult, err := p.builder.Build(ctx, input.AppName, input.Commit)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY070: build failed: %w", err)
+	}
+	
+	if !buildResult.Success {
+		return fmt.Errorf("EDEPLOY070: build failed: %v", buildResult.Error)
+	}
+	
+	// Store build result for later steps
+	input.BuildResult = buildResult
+	input.LocalImage = buildResult.ImageTag
+	
+	p.logf("  Built image: %s", buildResult.ImageTag)
 	return nil
 }
 
@@ -246,10 +268,67 @@ func (p *Pipeline) stepPush(ctx context.Context, input *PipelineInput) error {
 	return nil
 }
 
-// stepProvision provisions infrastructure
+// stepProvision provisions infrastructure via provisioner core
 func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) error {
 	p.log("  Provisioning infrastructure...")
-	// TODO: Call provisioner core
+	
+	// Check required inputs
+	if input.BuildResult == nil {
+		return fmt.Errorf("EDEPLOY071: build result required for provision")
+	}
+	
+	if input.AliAccessKey == "" || input.AliSecretKey == "" {
+		return fmt.Errorf("EDEPLOY073: AliCloud credentials required")
+	}
+	
+	// Create provider instance
+	provider, err := alicloud.NewProvider(input.ACRRegion, input.AliAccessKey, input.AliSecretKey)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY074: failed to create provider: %w", err)
+	}
+	
+	// Map build metadata to resource specs
+	meta := input.BuildResult.BuildMeta
+	mapperInstance := mapper.NewMapper(nil) // Registry can be nil for default mapping
+	specs := mapperInstance.MapToResourceSpecs(meta)
+	
+	// Plan the deployment
+	plan, err := provider.Plan(ctx, specs)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY075: plan failed: %w", err)
+	}
+	
+	// Apply the plan
+	applyResult, err := provider.Apply(ctx, plan)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY076: apply failed: %w", err)
+	}
+	
+	// Convert resource outputs for config generation
+	input.ResourceOutputs = make([]infragen.ResourceOutput, 0, len(applyResult.Resources))
+	for _, output := range applyResult.Resources {
+		// Convert output.Output to map[string]string
+		var outputMap map[string]string
+		switch v := output.Output.(type) {
+		case map[string]string:
+			outputMap = v
+		case map[string]interface{}:
+			outputMap = make(map[string]string, len(v))
+			for key, val := range v {
+				outputMap[key] = fmt.Sprintf("%v", val)
+			}
+		default:
+			outputMap = map[string]string{"value": fmt.Sprintf("%v", output.Output)}
+		}
+		resOutput := infragen.ResourceOutput{
+			Type:   output.Type,
+			Name:   output.Name,
+			Output: outputMap,
+		}
+		input.ResourceOutputs = append(input.ResourceOutputs, resOutput)
+	}
+	
+	p.logf("  Provisioned %d resources", len(applyResult.Resources))
 	return nil
 }
 
