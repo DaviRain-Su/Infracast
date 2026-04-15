@@ -3,6 +3,7 @@ package alicloud
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"sync"
 	"time"
@@ -402,16 +403,17 @@ func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, pass
 	return nil
 }
 
-// generateRandomPassword generates a secure random password
+// generateRandomPassword generates a cryptographically secure random password
 func generateRandomPassword() string {
-	// Generate a 16-character password with mixed case, numbers, and symbols
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	const length = 16
 	
-	// Simple random generation (in production, use crypto/rand)
 	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		b[i] = charset[b[i]%byte(len(charset))]
 	}
 	return string(b)
 }
