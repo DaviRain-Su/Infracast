@@ -4,6 +4,18 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.1.1] — 2026-04-15
+
+### Fixed
+
+- **`status` command**: Wired to state store — now shows environment list with resource counts and per-env detail view (was a stub printing placeholder text)
+- **`env` commands**: `list`, `show`, `create`, `delete` now backed by state store instead of hardcoded data; `isValidProvider` restricted to `alicloud` only (single-cloud constraint)
+- **DB path hardcode**: `logs` command reads `INFRACAST_STATE_DB` env var for state database path, falls back to `.infra/state.db` (was hardcoded TODO)
+
+### Changed
+
+- **`status --env` default**: Changed from `dev` to empty (shows all environments when omitted)
+
 ## [v0.1.0] — 2026-04-15
 
 ### Added
@@ -25,7 +37,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 - **ACK Verify deferred**: Full E2E deploy verification requires ACK cluster with sufficient account balance; `NotEnoughBalance` blocks node pool scaling
 - **Multi-cloud frozen**: Only Alicloud is supported; Huawei Cloud, Tencent Cloud, Volcengine adapters are not implemented
-- **`infracast status` is a stub**: Does not support `--output` flag; use `kubectl` for detailed status
+- **`infracast status`**: Does not support `--output` flag; shows state store data only (not live cloud state)
 - **No HTTPS/TLS termination**: Deploy pipeline does not configure Ingress TLS; manual Ingress setup required for production
 - **No secrets rotation**: Generated database/cache passwords are static after provisioning
 

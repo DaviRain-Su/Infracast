@@ -1,4 +1,20 @@
-# Release Notes: v0.1.0
+# Release Notes: v0.1.1
+
+**Date**: 2026-04-15
+**Status**: Patch Release (single-cloud, Alicloud only)
+
+---
+
+## What's Fixed in v0.1.1
+
+- **`infracast status`** now queries the state store — shows environment summary with resource counts, or per-env detail with `--env`
+- **`infracast env`** commands (`list`, `show`, `create`, `delete`) wired to state store, replacing hardcoded placeholder data
+- **DB path configurable** via `INFRACAST_STATE_DB` environment variable (was hardcoded)
+- **Provider constraint** enforced: `env create` only accepts `alicloud` (single-cloud)
+
+---
+
+## Previous Release: v0.1.0
 
 **Date**: 2026-04-15
 **Status**: General Availability (single-cloud, Alicloud only)
@@ -45,7 +61,7 @@ Deploy results sent automatically to Feishu or DingTalk webhooks.
 |-----------|--------|------------|
 | ACK Verify deferred | Full E2E deploy needs ACK + sufficient balance | Use `--dry-run` for validation; top up account for real deploys |
 | Multi-cloud frozen | Only Alicloud supported | No workaround; by design for v0.1.x |
-| `status` command is a stub | No `--output` flag | Use `kubectl get svc/pods` directly |
+| `status` shows state store only | No live cloud query or `--output` flag | Use `kubectl get svc/pods` for live state |
 | No TLS termination | Deploy doesn't configure Ingress TLS | Manual Ingress/cert-manager setup |
 | No secrets rotation | DB/cache passwords static after provision | Manual rotation via Alicloud console |
 
