@@ -1,8 +1,10 @@
 # Infracast — Task Breakdown
 
-> **Version** 1.6 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner), consistency fix by @codex_
+> **Version** 1.7 · **Date** 2026-04-15 · **Status** Frozen · **Author** @CC (Tech Review), updated by @CC-Opus (Planner), consistency fix by @codex_
 > **Phase**: dev-lifecycle Phase 4 (承接 Technical Spec v1.1 Frozen)
 > **Input**: PRD v1.1, Architecture v1.1, Technical Spec v1.1 (all Frozen)
+>
+> **v1.7 变更说明**: Phase 1.5 P0 修复完成（P0-1/P0-2/P0-3 ✅），TE01 复跑通过，Gate Decision 变更为 GO。Phase 2A 完成（TF01-TF06 ✅），Pipeline 7/7 步骤全部真实实现。
 >
 > **v1.6 变更说明**: Milestone E 完成闭环。TE01-TE03 全部完成，Gate Decision: NO-GO for Phase 2。P0 问题需先解决（Phase 1.5）。
 >

@@ -1,8 +1,8 @@
 # Milestone A Definition of Done (DoD)
 
-**Version**: 1.1  
-**Date**: 2026-04-14  
-**Status**: Approved (Frozen)  
+**Version**: 1.2  
+**Date**: 2026-04-15  
+**Status**: ✅ Completed  
 
 ## Overview
 
@@ -11,16 +11,16 @@ Milestone A (Week 1-2) establishes the foundational infrastructure for Infracast
 ## 1. Project Skeleton (Task 1)
 
 ### Requirements
-- [ ] Go module initialized with path `github.com/DaviRain-Su/infracast`
-- [ ] Directory structure following monorepo layout:
+- [x] Go module initialized with path `github.com/DaviRain-Su/infracast`
+- [x] Directory structure following monorepo layout:
   - `cmd/infracast/` - CLI entry point
   - `internal/` - Internal packages
   - `providers/` - Cloud provider adapters
   - `pkg/` - Public packages
   - `docs/` - Documentation
-- [ ] Build system with Makefile supporting: `build`, `test`, `lint`, `clean`
-- [ ] CI workflow placeholder (.github/workflows/ci.yml)
-- [ ] .gitignore properly configured
+- [x] Build system with Makefile supporting: `build`, `test`, `lint`, `clean`
+- [x] CI workflow placeholder (.github/workflows/ci.yml)
+- [x] .gitignore properly configured
 
 ### Acceptance Criteria
 ```bash
@@ -41,11 +41,11 @@ ok      github.com/DaviRain-Su/infracast/...    0.001s
 ## 2. CLI Command Structure (Tasks 1, 8)
 
 ### Required Commands
-- [ ] `infracast version` - Display version information
-- [ ] `infracast init --provider <p> --region <r>` - Initialize project
-- [ ] `infracast run` - Run locally (mock mode)
-- [ ] `infracast deploy --env <e>` - Deploy to environment
-- [ ] `infracast env list/create/destroy` - Environment management
+- [x] `infracast version` - Display version information
+- [x] `infracast init --provider <p> --region <r>` - Initialize project
+- [x] `infracast run` - Run locally (mock mode)
+- [x] `infracast deploy --env <e>` - Deploy to environment
+- [x] `infracast env list/create/destroy` - Environment management
 
 ### Acceptance Criteria
 ```bash
@@ -91,9 +91,9 @@ overrides:
 ```
 
 ### Validation Requirements
-- [ ] `provider` is required and must be in whitelist (alicloud)
-- [ ] `region` is required and non-empty
-- [ ] Environment names must be valid (alphanumeric + hyphen)
+- [x] `provider` is required and must be in whitelist (alicloud)
+- [x] `region` is required and non-empty
+- [x] Environment names must be valid (alphanumeric + hyphen)
 
 ### Acceptance Criteria
 ```go
@@ -144,9 +144,9 @@ The generated `infracfg.json` must align with Encore's self-host configuration s
 ```
 
 ### Key Fields to Support
-- [ ] `sql_databases` - Map of database name to connection config
-- [ ] `redis` - Map of cache name to connection config  
-- [ ] `object_storage` - Map of bucket name to S3-compatible config
+- [x] `sql_databases` - Map of database name to connection config
+- [x] `redis` - Map of cache name to connection config  
+- [x] `object_storage` - Map of bucket name to S3-compatible config
 
 ### Acceptance Criteria
 ```go
@@ -184,10 +184,10 @@ type CloudProviderInterface interface {
 ```
 
 ### Requirements
-- [ ] Interface defined with all P0 methods
-- [ ] Provider Registry with registration/routing
-- [ ] AlicloudAdapter mock implementation
-- [ ] STS/AssumeRole support in credential model
+- [x] Interface defined with all P0 methods
+- [x] Provider Registry with registration/routing
+- [x] AlicloudAdapter mock implementation
+- [x] STS/AssumeRole support in credential model
 
 ### STS/AssumeRole Design
 ```go
@@ -314,19 +314,19 @@ spec:
 ```
 
 ### Validation Requirements
-- [ ] Output must be valid YAML
-- [ ] Must pass `kubectl apply --dry-run=client` validation
-- [ ] Must include Deployment and Service resources
+- [x] Output must be valid YAML
+- [x] Must pass `kubectl apply --dry-run=client` validation
+- [x] Must include Deployment and Service resources
 
 ## 8. Success Gates (Milestone A Completion)
 
 All of the following must pass:
 
-- [ ] **Configuration Chain**: `infracast.yaml` read/write and validation passes
-- [ ] **State Chain**: Idempotency table constraints and version update logic passes
-- [ ] **Infra Generation**: `infracfg.json` can be read back and matches expected schema
-- [ ] **CLI**: `init/run/deploy` commands are executable (deploy may be mock)
-- [ ] **Documentation**: Milestone A delivery notes (scope/limitations/next steps)
+- [x] **Configuration Chain**: `infracast.yaml` read/write and validation passes
+- [x] **State Chain**: Idempotency table constraints and version update logic passes
+- [x] **Infra Generation**: `infracfg.json` can be read back and matches expected schema
+- [x] **CLI**: `init/run/deploy` commands are executable (deploy may be mock)
+- [x] **Documentation**: Milestone A delivery notes (scope/limitations/next steps)
 
 ## 9. Out of Scope (Explicit)
 
