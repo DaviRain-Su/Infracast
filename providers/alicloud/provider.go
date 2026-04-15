@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DaviRain-Su/infracast/internal/state"
 	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk"
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/auth/credentials"
@@ -31,6 +32,18 @@ type Provider struct {
 	ossClient       *oss.Client
 	networkCache    *networkState
 	networkMu       sync.RWMutex
+	stateStore      StateStore // Optional state store for network persistence
+}
+
+// StateStore defines the interface for network state persistence
+type StateStore interface {
+	GetNetworkResource(ctx context.Context, envID string, resourceType string) (*state.InfraResource, error)
+	UpsertResource(ctx context.Context, resource *state.InfraResource) error
+}
+
+// SetStateStore sets the state store for network persistence
+func (p *Provider) SetStateStore(store StateStore) {
+	p.stateStore = store
 }
 
 // NewProvider creates a new AliCloud provider instance
@@ -102,7 +115,8 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	}
 
 	// Ensure default VPC/VSwitch are available for network-bound resources.
-	vpcID, vswID, err := p.ensureNetwork(ctx)
+	// Use spec.Name as envID for network state persistence
+	vpcID, vswID, err := p.ensureNetwork(ctx, spec.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +266,8 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 	}
 
 	// Ensure default VPC/VSwitch are available for network-bound resources.
-	vpcID, vswID, err := p.ensureNetwork(ctx)
+	// Use spec.Name as envID for network state persistence
+	vpcID, vswID, err := p.ensureNetwork(ctx, spec.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -317,7 +332,9 @@ func (p *Provider) ProvisionObjectStorage(ctx context.Context, spec providers.Ob
 		return nil, fmt.Errorf("OSS client not initialized")
 	}
 
-	if _, _, err := p.ensureNetwork(ctx); err != nil {
+	// Ensure default VPC/VSwitch are available for network-bound resources.
+	// Use spec.Name as envID for network state persistence
+	if _, _, err := p.ensureNetwork(ctx, spec.Name); err != nil {
 		return nil, err
 	}
 

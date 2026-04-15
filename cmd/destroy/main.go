@@ -20,6 +20,7 @@ func main() {
 		dryRun    = flag.Bool("dry-run", true, "Show what would be deleted without actually deleting")
 		apply     = flag.Bool("apply", false, "Actually perform deletion (required for real deletion)")
 		keepVPC   = flag.Int("keep-vpc", 1, "Number of VPCs to keep for reuse")
+		force     = flag.Bool("force", false, "Allow broad prefix deletion")
 	)
 	flag.Parse()
 
@@ -27,11 +28,10 @@ func main() {
 		log.Fatal("Usage: destroy --env <env-id> [--apply]")
 	}
 
-	// Safety: require --apply for real deletion
-	if !*dryRun && !*apply {
-		log.Println("WARNING: Dry-run mode is disabled but --apply not set.")
-		log.Println("Use --apply to actually delete resources.")
-		log.Println("Re-running with --dry-run=true for safety.")
+	// Safety: require --apply for real deletion.
+	if *apply {
+		*dryRun = false
+	} else {
 		*dryRun = true
 	}
 
@@ -53,11 +53,15 @@ func main() {
 	if resourcePrefix == "" {
 		resourcePrefix = fmt.Sprintf("infracast-%s", *envID)
 	}
+	if *apply && !*force && (resourcePrefix == "infracast" || resourcePrefix == "infra") {
+		log.Fatalf("refusing broad prefix delete for prefix=%q without --force", resourcePrefix)
+	}
 
 	// Setup options
 	opts := alicloud.DestroyOptions{
-		DryRun: *dryRun,
-		Prefix: resourcePrefix,
+		DryRun:  *dryRun,
+		Prefix:  resourcePrefix,
+		KeepVPC: *keepVPC,
 	}
 
 	// Log start

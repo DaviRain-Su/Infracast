@@ -77,7 +77,7 @@ func (s *Store) initSchema() error {
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		env_id TEXT NOT NULL,
 		resource_name TEXT NOT NULL,
-		resource_type TEXT NOT NULL CHECK(resource_type IN ('database','cache','object_storage','compute')),
+		resource_type TEXT NOT NULL CHECK(resource_type IN ('database','cache','object_storage','compute','vpc','vswitch')),
 		provider_resource_id TEXT,
 		spec_hash TEXT NOT NULL,
 		state_version INTEGER NOT NULL DEFAULT 1 CHECK(state_version > 0),
@@ -263,4 +263,59 @@ func (s *Store) ListEnvironments(ctx context.Context) ([]string, error) {
 	}
 
 	return envs, nil
+}
+
+// GetNetworkResource returns the network resource (vpc/vswitch) for an environment
+func (s *Store) GetNetworkResource(ctx context.Context, envID string, resourceType string) (*InfraResource, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, env_id, resource_name, resource_type, provider_resource_id, spec_hash, state_version, config_json, status, error_msg, created_at, updated_at
+		FROM infra_resources
+		WHERE env_id = ? AND resource_type = ?
+	`, envID, resourceType)
+
+	var r InfraResource
+	if err := row.Scan(
+		&r.ID, &r.EnvID, &r.ResourceName, &r.ResourceType,
+		&r.ProviderResourceID, &r.SpecHash, &r.StateVersion,
+		&r.ConfigJSON, &r.Status, &r.ErrorMsg, &r.CreatedAt, &r.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrResourceNotFound
+		}
+		return nil, fmt.Errorf("querying network resource: %w", err)
+	}
+
+	return &r, nil
+}
+
+// ListNetworkResourcesByEnv returns all network resources (vpc/vswitch) for an environment
+func (s *Store) ListNetworkResourcesByEnv(ctx context.Context, envID string) ([]*InfraResource, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, env_id, resource_name, resource_type, provider_resource_id, spec_hash, state_version, config_json, status, error_msg, created_at, updated_at
+		FROM infra_resources
+		WHERE env_id = ? AND resource_type IN ('vpc', 'vswitch')
+	`, envID)
+	if err != nil {
+		return nil, fmt.Errorf("querying network resources: %w", err)
+	}
+	defer rows.Close()
+
+	var resources []*InfraResource
+	for rows.Next() {
+		var r InfraResource
+		if err := rows.Scan(
+			&r.ID, &r.EnvID, &r.ResourceName, &r.ResourceType,
+			&r.ProviderResourceID, &r.SpecHash, &r.StateVersion,
+			&r.ConfigJSON, &r.Status, &r.ErrorMsg, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+		resources = append(resources, &r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+
+	return resources, nil
 }

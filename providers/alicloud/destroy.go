@@ -4,6 +4,7 @@ package alicloud
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 type DestroyOptions struct {
 	DryRun bool
 	Prefix string
+	KeepVPC int
 }
 
 // DestroyResult contains the result of destroy operation
@@ -74,15 +76,37 @@ func (p *Provider) DestroyEnvironment(ctx context.Context, envID string, opts De
 	if prefix == "" {
 		prefix = fmt.Sprintf("infracast-%s", envID)
 	}
+	keepVPC := opts.KeepVPC
+	if keepVPC < 0 {
+		keepVPC = 0
+	}
 
 	fmt.Printf("[Destroy] Starting destruction for env=%s dryRun=%v\n", envID, opts.DryRun)
 
+	// Build VPC drop set first, so upper-layer resources can also be selected by VPC association.
+	infracastVPCs, err := p.listPrefixedVPCs(ctx, prefix)
+	if err != nil {
+		return result, fmt.Errorf("list VPCs for destroy plan: %w", err)
+	}
+	keep, drop := splitVPCs(infracastVPCs, keepVPC)
+	dropVPCIDs := make(map[string]struct{}, len(drop))
+	for _, item := range drop {
+		dropVPCIDs[item.VpcId] = struct{}{}
+	}
+	if len(keep) > 0 {
+		keepIDs := make([]string, 0, len(keep))
+		for _, item := range keep {
+			keepIDs = append(keepIDs, item.VpcId)
+		}
+		fmt.Printf("[Destroy] Keeping VPCs for reuse: %s\n", strings.Join(keepIDs, ", "))
+	}
+
 	// Phase 1: Delete compute/database resources (highest level)
-	if err := p.destroyRDS(ctx, prefix, opts.DryRun, result); err != nil {
+	if err := p.destroyRDS(ctx, prefix, dropVPCIDs, opts.DryRun, result); err != nil {
 		fmt.Printf("[Destroy] RDS cleanup error: %v\n", err)
 	}
 
-	if err := p.destroyRedis(ctx, prefix, opts.DryRun, result); err != nil {
+	if err := p.destroyRedis(ctx, prefix, dropVPCIDs, opts.DryRun, result); err != nil {
 		fmt.Printf("[Destroy] Redis cleanup error: %v\n", err)
 	}
 
@@ -91,11 +115,11 @@ func (p *Provider) DestroyEnvironment(ctx context.Context, envID string, opts De
 	}
 
 	// Phase 2: Delete network resources
-	if err := p.destroyVSwitches(ctx, prefix, opts.DryRun, result); err != nil {
+	if err := p.destroyVSwitches(ctx, prefix, dropVPCIDs, opts.DryRun, result); err != nil {
 		fmt.Printf("[Destroy] VSwitch cleanup error: %v\n", err)
 	}
 
-	if err := p.destroyVPCs(ctx, prefix, opts.DryRun, result); err != nil {
+	if err := p.destroyVPCs(ctx, drop, opts.DryRun, result); err != nil {
 		fmt.Printf("[Destroy] VPC cleanup error: %v\n", err)
 	}
 
@@ -238,7 +262,7 @@ func (p *Provider) destroySingleOSS(ctx context.Context, bucketName string) erro
 }
 
 // destroyRDS deletes RDS instances matching prefix (using Description/Name, not ID)
-func (p *Provider) destroyRDS(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
+func (p *Provider) destroyRDS(ctx context.Context, prefix string, dropVPCIDs map[string]struct{}, dryRun bool, result *DestroyResult) error {
 	fmt.Printf("[Destroy] Scanning RDS instances with prefix=%s\n", prefix)
 
 	pageNum := 1
@@ -254,8 +278,7 @@ func (p *Provider) destroyRDS(ctx context.Context, prefix string, dryRun bool, r
 		}
 
 		for _, inst := range resp.Items.DBInstance {
-			// Match by Description (instance name), not ID
-			if !strings.HasPrefix(inst.DBInstanceDescription, prefix) {
+			if !shouldDeleteRDS(inst, dropVPCIDs, prefix) {
 				continue
 			}
 
@@ -328,7 +351,7 @@ func (p *Provider) waitForRDSDeleted(ctx context.Context, instanceID string) err
 }
 
 // destroyRedis deletes Redis instances matching prefix (using Name, not ID)
-func (p *Provider) destroyRedis(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
+func (p *Provider) destroyRedis(ctx context.Context, prefix string, dropVPCIDs map[string]struct{}, dryRun bool, result *DestroyResult) error {
 	fmt.Printf("[Destroy] Scanning Redis instances with prefix=%s\n", prefix)
 
 	pageNum := 1
@@ -344,8 +367,7 @@ func (p *Provider) destroyRedis(ctx context.Context, prefix string, dryRun bool,
 		}
 
 		for _, inst := range resp.Instances.KVStoreInstance {
-			// Match by InstanceName, not InstanceId
-			if !strings.HasPrefix(inst.InstanceName, prefix) {
+			if !shouldDeleteRedis(inst, dropVPCIDs, prefix) {
 				continue
 			}
 
@@ -461,7 +483,7 @@ func (p *Provider) destroyOSS(ctx context.Context, prefix string, dryRun bool, r
 }
 
 // destroyVSwitches deletes VSwitchs with pagination and retry
-func (p *Provider) destroyVSwitches(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
+func (p *Provider) destroyVSwitches(ctx context.Context, prefix string, dropVPCIDs map[string]struct{}, dryRun bool, result *DestroyResult) error {
 	fmt.Printf("[Destroy] Scanning VSwitches with prefix=%s\n", prefix)
 
 	pageNum := 1
@@ -479,7 +501,7 @@ func (p *Provider) destroyVSwitches(ctx context.Context, prefix string, dryRun b
 		}
 
 		for _, vsw := range resp.VSwitches.VSwitch {
-			if !strings.HasPrefix(vsw.VSwitchName, prefix) {
+			if !shouldDeleteVSwitch(vsw, dropVPCIDs, prefix) {
 				continue
 			}
 
@@ -569,49 +591,26 @@ func (p *Provider) deleteVSwitchWithRetry(ctx context.Context, vswID string) err
 }
 
 // destroyVPCs deletes VPCs with pagination and retry
-func (p *Provider) destroyVPCs(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
-	fmt.Printf("[Destroy] Scanning VPCs with prefix=%s\n", prefix)
+func (p *Provider) destroyVPCs(ctx context.Context, drop []vpc.Vpc, dryRun bool, result *DestroyResult) error {
+	fmt.Printf("[Destroy] Scanning VPCs selected for deletion\n")
 
-	pageNum := 1
-	for {
-		req := vpc.CreateDescribeVpcsRequest()
-		req.RegionId = p.region
-		req.PageSize = requests.NewInteger(50)
-		req.PageNumber = requests.NewInteger(pageNum)
+	for _, vpcInfo := range drop {
+		resourceID := fmt.Sprintf("VPC:%s", vpcInfo.VpcId)
+		fmt.Printf("[Destroy] Found VPC: %s\n", vpcInfo.VpcId)
 
-		resp, err := p.vpcClient.DescribeVpcs(req)
-		if err != nil {
-			return fmt.Errorf("list VPCs page %d: %w", pageNum, err)
+		if dryRun {
+			fmt.Printf("[Destroy] [DRY-RUN] Would delete VPC: %s\n", vpcInfo.VpcId)
+			result.Skipped = append(result.Skipped, resourceID)
+			continue
 		}
 
-		for _, vpcInfo := range resp.Vpcs.Vpc {
-			if !strings.HasPrefix(vpcInfo.VpcName, prefix) {
-				continue
-			}
-
-			resourceID := fmt.Sprintf("VPC:%s", vpcInfo.VpcId)
-			fmt.Printf("[Destroy] Found VPC: %s\n", vpcInfo.VpcId)
-
-			if dryRun {
-				fmt.Printf("[Destroy] [DRY-RUN] Would delete VPC: %s\n", vpcInfo.VpcId)
-				result.Skipped = append(result.Skipped, resourceID)
-				continue
-			}
-
-			if err := p.deleteVPCWithRetry(ctx, vpcInfo.VpcId); err != nil {
-				fmt.Printf("[Destroy] Failed to delete VPC %s: %v\n", vpcInfo.VpcId, err)
-				result.Failed = append(result.Failed, resourceID)
-			} else {
-				fmt.Printf("[Destroy] VPC %s deleted\n", vpcInfo.VpcId)
-				result.Deleted = append(result.Deleted, resourceID)
-			}
+		if err := p.deleteVPCWithRetry(ctx, vpcInfo.VpcId); err != nil {
+			fmt.Printf("[Destroy] Failed to delete VPC %s: %v\n", vpcInfo.VpcId, err)
+			result.Failed = append(result.Failed, resourceID)
+		} else {
+			fmt.Printf("[Destroy] VPC %s deleted\n", vpcInfo.VpcId)
+			result.Deleted = append(result.Deleted, resourceID)
 		}
-
-		// Check if more pages
-		if len(resp.Vpcs.Vpc) < 50 {
-			break
-		}
-		pageNum++
 	}
 
 	return nil
@@ -650,4 +649,76 @@ func (p *Provider) deleteVPCWithRetry(ctx context.Context, vpcID string) error {
 	}
 
 	return fmt.Errorf("max retries exceeded for VPC %s", vpcID)
+}
+
+func (p *Provider) listPrefixedVPCs(_ context.Context, prefix string) ([]vpc.Vpc, error) {
+	all := make([]vpc.Vpc, 0)
+	page := 1
+
+	for {
+		req := vpc.CreateDescribeVpcsRequest()
+		req.RegionId = p.region
+		req.PageSize = requests.NewInteger(50)
+		req.PageNumber = requests.NewInteger(page)
+
+		resp, err := p.vpcClient.DescribeVpcs(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp == nil || len(resp.Vpcs.Vpc) == 0 {
+			break
+		}
+
+		for _, item := range resp.Vpcs.Vpc {
+			if hasPrefixInsensitive(item.VpcName, prefix+"-vpc") || hasPrefixInsensitive(item.VpcName, prefix) {
+				all = append(all, item)
+			}
+		}
+
+		if page*resp.PageSize >= resp.TotalCount || resp.PageSize == 0 {
+			break
+		}
+		page++
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].CreationTime < all[j].CreationTime
+	})
+	return all, nil
+}
+
+func splitVPCs(vpcs []vpc.Vpc, keepN int) (keep []vpc.Vpc, drop []vpc.Vpc) {
+	if keepN < 0 {
+		keepN = 0
+	}
+	if keepN > len(vpcs) {
+		keepN = len(vpcs)
+	}
+	return vpcs[:keepN], vpcs[keepN:]
+}
+
+func shouldDeleteRDS(inst rds.DBInstance, dropVPCIDs map[string]struct{}, prefix string) bool {
+	if _, ok := dropVPCIDs[inst.VpcId]; ok {
+		return true
+	}
+	return hasPrefixInsensitive(inst.DBInstanceDescription, prefix) ||
+		hasPrefixInsensitive(inst.DBInstanceName, prefix)
+}
+
+func shouldDeleteRedis(inst r_kvstore.KVStoreInstance, dropVPCIDs map[string]struct{}, prefix string) bool {
+	if _, ok := dropVPCIDs[inst.VpcId]; ok {
+		return true
+	}
+	return hasPrefixInsensitive(inst.InstanceName, prefix)
+}
+
+func shouldDeleteVSwitch(vsw vpc.VSwitch, dropVPCIDs map[string]struct{}, prefix string) bool {
+	if _, ok := dropVPCIDs[vsw.VpcId]; ok {
+		return true
+	}
+	return hasPrefixInsensitive(vsw.VSwitchName, prefix)
+}
+
+func hasPrefixInsensitive(s, prefix string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(s)), strings.ToLower(strings.TrimSpace(prefix)))
 }
