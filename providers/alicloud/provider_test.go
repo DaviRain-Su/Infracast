@@ -138,12 +138,12 @@ func TestProvider_ensureNetwork_Cached(t *testing.T) {
 			vswitchID: "vsw-cached-cn-hangzhou",
 		},
 	}
-	vpcID1, vswID1, err := p.ensureNetwork(context.Background(), "")
+	vpcID1, vswID1, err := p.ensureNetwork(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "vpc-cached-cn-hangzhou", vpcID1)
 	assert.Equal(t, "vsw-cached-cn-hangzhou", vswID1)
 
-	vpcID2, vswID2, err := p.ensureNetwork(context.Background(), "")
+	vpcID2, vswID2, err := p.ensureNetwork(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, vpcID1, vpcID2)
 	assert.Equal(t, vswID1, vswID2)
@@ -152,7 +152,7 @@ func TestProvider_ensureNetwork_Cached(t *testing.T) {
 func TestProvider_ensureNetwork_MissingVpcClient(t *testing.T) {
 	p := &Provider{region: "cn-hangzhou"}
 
-	vpcID, vswID, err := p.ensureNetwork(context.Background(), "")
+	vpcID, vswID, err := p.ensureNetwork(context.Background())
 	require.Error(t, err)
 	assert.Equal(t, "VPC client not initialized", err.Error())
 	assert.Equal(t, "", vpcID)
@@ -162,7 +162,7 @@ func TestProvider_ensureNetwork_MissingVpcClient(t *testing.T) {
 func TestProvider_ensureNetwork_EmptyRegion(t *testing.T) {
 	p := &Provider{}
 
-	vpcID, vswID, err := p.ensureNetwork(context.Background(), "")
+	vpcID, vswID, err := p.ensureNetwork(context.Background())
 	require.Error(t, err)
 	assert.Equal(t, "", vpcID)
 	assert.Equal(t, "", vswID)
