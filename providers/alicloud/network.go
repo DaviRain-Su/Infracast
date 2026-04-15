@@ -3,6 +3,7 @@ package alicloud
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
@@ -67,7 +68,13 @@ func (p *Provider) ensureVPC(region string) (string, error) {
 
 	describeResp, err := p.vpcClient.DescribeVpcs(describeReq)
 	if err == nil && describeResp != nil && describeResp.TotalCount > 0 && len(describeResp.Vpcs.Vpc) > 0 {
-		return describeResp.Vpcs.Vpc[0].VpcId, nil
+		existing := describeResp.Vpcs.Vpc[0]
+		if existing.Status != "Available" {
+			if err := p.waitForVPCAvailable(existing.VpcId); err != nil {
+				return "", fmt.Errorf("failed to wait for existing VPC to become available: %w", err)
+			}
+		}
+		return existing.VpcId, nil
 	}
 
 	createReq := vpc.CreateCreateVpcRequest()
@@ -110,14 +117,57 @@ func (p *Provider) ensureVSwitch(vpcID string) (string, error) {
 	createReq.CidrBlock = networkVSwitchCidrBlock
 	createReq.ZoneId = fmt.Sprintf("%s-%s", p.region, networkZoneSuffix)
 
-	resp, err := p.vpcClient.CreateVSwitch(createReq)
-	if err != nil {
-		return "", fmt.Errorf("failed to create default vSwitch: %w", err)
+	// Re-check VPC readiness before creating VSwitch. AliCloud may still reject
+	// immediate VSwitch creation with IncorrectVpcStatus due eventual consistency.
+	if err := p.waitForVPCAvailable(vpcID); err != nil {
+		return "", fmt.Errorf("failed to wait for VPC before creating vSwitch: %w", err)
 	}
-	if resp == nil || resp.VSwitchId == "" {
-		return "", fmt.Errorf("failed to create default vSwitch: empty vSwitch ID in response")
+
+	zoneCandidates := candidateZoneIDs(p.region)
+	var lastErr error
+	for _, zoneID := range zoneCandidates {
+		createReq.ZoneId = zoneID
+
+		for i := 0; i < 10; i++ {
+			resp, err := p.vpcClient.CreateVSwitch(createReq)
+			if err == nil {
+				if resp == nil || resp.VSwitchId == "" {
+					return "", fmt.Errorf("failed to create default vSwitch: empty vSwitch ID in response")
+				}
+				return resp.VSwitchId, nil
+			}
+
+			lastErr = err
+			// VPC not yet fully ready: retry same zone.
+			if strings.Contains(err.Error(), "IncorrectVpcStatus") {
+				time.Sleep(6 * time.Second)
+				continue
+			}
+			// Zone unavailable: switch to next candidate zone.
+			if strings.Contains(err.Error(), "ResourceNotAvailable") {
+				break
+			}
+			return "", fmt.Errorf("failed to create default vSwitch: %w", err)
+		}
 	}
-	return resp.VSwitchId, nil
+
+	return "", fmt.Errorf("failed to create default vSwitch after retries: %w", lastErr)
+}
+
+func candidateZoneIDs(region string) []string {
+	// Try region-a first, then fallback zones.
+	suffixes := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	zones := make([]string, 0, len(suffixes))
+	seen := make(map[string]struct{}, len(suffixes))
+	for _, s := range suffixes {
+		z := fmt.Sprintf("%s-%s", region, s)
+		if _, ok := seen[z]; ok {
+			continue
+		}
+		seen[z] = struct{}{}
+		zones = append(zones, z)
+	}
+	return zones
 }
 
 func networkVPCName(region string) string {

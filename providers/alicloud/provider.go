@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -117,6 +118,9 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	request.RegionId = p.region
 	request.Engine = engine
 	request.EngineVersion = spec.Version
+	if request.Engine == "PostgreSQL" && request.EngineVersion != "" && !strings.Contains(request.EngineVersion, ".") {
+		request.EngineVersion = request.EngineVersion + ".0"
+	}
 	request.DBInstanceClass = spec.InstanceClass
 	if request.DBInstanceClass == "" {
 		// Default instance class for small workloads
@@ -128,6 +132,7 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	}
 	request.DBInstanceNetType = "Intranet"
 	request.PayType = "Postpaid" // Pay-as-you-go
+	request.SecurityIPList = "127.0.0.1"
 
 	// Set High Availability category
 	if spec.HighAvail != nil && *spec.HighAvail {
@@ -152,8 +157,8 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 		}, nil
 	}
 
-	// Execute creation
-	response, err := p.rdsClient.CreateDBInstance(request)
+	// Execute creation with instance class fallback
+	response, err := p.createDBInstanceWithFallback(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RDS instance: %w", err)
 	}
@@ -401,6 +406,50 @@ func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, pass
 	}
 	
 	return nil
+}
+
+func (p *Provider) createDBInstanceWithFallback(request *rds.CreateDBInstanceRequest) (*rds.CreateDBInstanceResponse, error) {
+	for _, class := range candidateDBInstanceClasses(request.Engine, request.DBInstanceClass) {
+		request.DBInstanceClass = class
+		resp, err := p.rdsClient.CreateDBInstance(request)
+		if err == nil {
+			return resp, nil
+		}
+		if !strings.Contains(err.Error(), "InvalidDBInstanceClass.NotFound") {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("no available DB instance class found for engine=%s in region=%s", request.Engine, p.region)
+}
+
+func candidateDBInstanceClasses(engine, preferred string) []string {
+	classes := make([]string, 0, 8)
+	seen := map[string]struct{}{}
+	add := func(v string) {
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		classes = append(classes, v)
+	}
+
+	add(preferred)
+	switch engine {
+	case "PostgreSQL":
+		add("pg.n2.1c.1m")
+		add("pg.n2.1c.2m")
+		add("pg.n2.2c.4m")
+		add("pg.n2.2c.8m")
+		add("rds.pg.s1.small")
+	default:
+		add("rds.mysql.s1.small")
+		add("mysql.n2.small.1")
+		add("mysql.n2.medium.1")
+	}
+	return classes
 }
 
 // generateRandomPassword generates a cryptographically secure random password
