@@ -243,11 +243,24 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 		return nil, fmt.Errorf("failed to create Redis instance: %w", err)
 	}
 
+	// Poll for instance to be ready and get endpoint
+	instanceID := response.InstanceId
+	endpoint, err := p.waitForCacheInstanceReady(ctx, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to wait for Redis instance: %w", err)
+	}
+
+	// Generate and set initial password
+	password := generateRandomPassword()
+	if err := p.setCachePassword(ctx, instanceID, password); err != nil {
+		return nil, fmt.Errorf("failed to set Redis password: %w", err)
+	}
+
 	return &providers.CacheOutput{
-		ResourceID: response.InstanceId,
-		Endpoint:   "", // TODO: Poll DescribeInstances to get connection domain
+		ResourceID: instanceID,
+		Endpoint:   endpoint,
 		Port:       6379,
-		Password:   "", // TODO: Retrieve after creation
+		Password:   password,
 	}, nil
 }
 
@@ -401,4 +414,61 @@ func generateRandomPassword() string {
 		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
 	}
 	return string(b)
+}
+
+// waitForCacheInstanceReady polls until the Redis instance is ready and returns the endpoint
+func (p *Provider) waitForCacheInstanceReady(ctx context.Context, instanceID string) (string, error) {
+	// Poll for up to 10 minutes (Redis creation takes time)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	
+	timeout := time.After(10 * time.Minute)
+	
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-timeout:
+			return "", fmt.Errorf("timeout waiting for Redis instance %s", instanceID)
+		case <-ticker.C:
+			req := r_kvstore.CreateDescribeInstancesRequest()
+			req.RegionId = p.region
+			req.InstanceIds = instanceID
+			
+			resp, err := p.kvstoreClient.DescribeInstances(req)
+			if err != nil {
+				continue // Retry on error
+			}
+			
+			// Check if instance is available
+			for _, inst := range resp.Instances.KVStoreInstance {
+				if inst.InstanceId == instanceID {
+					if inst.InstanceStatus == "Normal" {
+						if inst.ConnectionDomain != "" {
+							return inst.ConnectionDomain, nil
+						}
+						return inst.PrivateIp, nil
+					}
+				}
+			}
+		}
+	}
+}
+
+// setCachePassword sets the password for the Redis instance
+func (p *Provider) setCachePassword(ctx context.Context, instanceID, password string) error {
+	// Try to reset the account password for the default account
+	req := r_kvstore.CreateResetAccountPasswordRequest()
+	req.InstanceId = instanceID
+	req.AccountName = "default" // Default account name for Redis
+	req.AccountPassword = password
+	
+	_, err := p.kvstoreClient.ResetAccountPassword(req)
+	if err != nil {
+		// If reset fails, the password might be auto-generated or set during creation
+		// This is a simplified implementation
+		return fmt.Errorf("failed to set Redis password: %w", err)
+	}
+	
+	return nil
 }
