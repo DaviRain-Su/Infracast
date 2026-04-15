@@ -4,6 +4,20 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.1.2] — 2026-04-15
+
+### Fixed
+
+- **Schema CHECK constraint**: Added `environment` to `resource_type` CHECK — `env create` was blocked at DB level when writing `_env_meta` record
+- **`_env_meta` display leak**: Filtered internal `_env_meta` records from `status` and `env` resource counts and detail views
+- **`env list` hardcoded provider/region**: Now parses `ConfigJSON` from `_env_meta` to show actual provider and region values
+- **`env show` color scheme**: Aligned resource status colors with `status` command (ready/created=green, failed/error=red, other=yellow)
+- **ECFG005 error message**: Now includes guidance text `(v0.1.x supports alicloud only)`
+
+### Added
+
+- **Regression tests**: 27 new tests across `deploy_test.go` (13), `provision_test.go` (5), `destroy_test.go` (9) covering command structure, flags, validation, safety defaults, and helper functions
+
 ## [v0.1.1] — 2026-04-15
 
 ### Fixed

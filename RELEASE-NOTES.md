@@ -1,11 +1,30 @@
-# Release Notes: v0.1.1
+# Release Notes: v0.1.2
 
 **Date**: 2026-04-15
 **Status**: Patch Release (single-cloud, Alicloud only)
 
 ---
 
-## What's Fixed in v0.1.1
+## What's Fixed in v0.1.2
+
+- **`env create` unblocked**: Schema CHECK constraint now accepts `environment` resource type — `env create` was silently failing at DB level
+- **Clean resource counts**: Internal `_env_meta` records filtered from `status` and `env` output — no more phantom resource in counts
+- **`env list` shows real metadata**: Provider and region parsed from state store instead of hardcoded `alicloud`/`-`
+- **Consistent status colors**: `env show` now uses same green/red/yellow scheme as `status` command
+- **Better error guidance**: `ECFG005` now tells you `(v0.1.x supports alicloud only)` instead of just "unsupported provider"
+
+## What's New in v0.1.2
+
+- **27 regression tests** added for deploy, provision, and destroy command paths (structure, flags, validation, safety defaults)
+
+---
+
+## Previous Release: v0.1.1
+
+**Date**: 2026-04-15
+**Status**: Patch Release (single-cloud, Alicloud only)
+
+### What's Fixed in v0.1.1
 
 - **`infracast status`** now queries the state store — shows environment summary with resource counts, or per-env detail with `--env`
 - **`infracast env`** commands (`list`, `show`, `create`, `delete`) wired to state store, replacing hardcoded placeholder data
