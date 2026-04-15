@@ -58,10 +58,11 @@ func TestLogsCommandRegistered(t *testing.T) {
 // Sprint W3-3/W4-6 found docs referencing `infracast status --output url`
 // which caused confusion. This test ensures status never gains --output
 // without intentional design.
-func TestStatusCommandHasNoOutputFlag(t *testing.T) {
+func TestStatusCommandHasOutputFlag(t *testing.T) {
 	cmd := newStatusCommand()
 	flag := cmd.Flags().Lookup("output")
-	assert.Nil(t, flag, "status command must not have --output flag (known limitation)")
+	assert.NotNil(t, flag, "status command must have --output flag (v0.2.0)")
+	assert.Equal(t, "", flag.DefValue)
 }
 
 // TestParseDuration validates duration parsing including day format
