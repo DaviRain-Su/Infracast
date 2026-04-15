@@ -14,6 +14,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/DaviRain-Su/infracast/internal/config"
+	"github.com/DaviRain-Su/infracast/internal/deploy"
 	"github.com/DaviRain-Su/infracast/internal/state"
 )
 
@@ -335,24 +337,79 @@ type ResourceInfo struct {
 }
 
 // validateEnvironment validates the environment name
+// Checks the state store first, then falls back to well-known defaults
 func validateEnvironment(env string) error {
-	validEnvs := []string{"dev", "staging", "production", "local"}
-	for _, valid := range validEnvs {
+	if env == "" {
+		return fmt.Errorf("environment name cannot be empty")
+	}
+
+	// Check state store for user-created environments
+	store, err := state.NewStore(defaultDBPath())
+	if err == nil {
+		ctx := context.Background()
+		envs, err := store.ListEnvironments(ctx)
+		if err == nil {
+			for _, e := range envs {
+				if e == env {
+					return nil
+				}
+			}
+		}
+	}
+
+	// Fall back to well-known defaults (for use before first env create)
+	wellKnown := []string{"dev", "staging", "production", "local"}
+	for _, valid := range wellKnown {
 		if valid == env {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid environment: %s (must be one of: dev, staging, production, local)", env)
+
+	return fmt.Errorf("environment not found: %s (create it with 'infracast env create %s --provider alicloud --region cn-hangzhou')", env, env)
 }
 
-// loadDeployConfig loads the deployment configuration
+// loadDeployConfig loads the deployment configuration from infracast.yaml
 func loadDeployConfig(env string) (*DeployConfig, error) {
-	// TODO: Load from infracast.yaml
+	cfg, err := config.Load("")
+	if err != nil {
+		// Fall back to defaults if config file not found
+		return &DeployConfig{
+			AppName:     "my-app",
+			Environment: env,
+			Provider:    "alicloud",
+			Region:      "cn-hangzhou",
+			Resources: []ResourceInfo{
+				{Type: "sql_server", Name: "main"},
+				{Type: "redis", Name: "cache"},
+			},
+		}, nil
+	}
+
+	provider := cfg.Provider
+	region := cfg.Region
+
+	// Check for environment-specific overrides
+	if envCfg, ok := cfg.Environments[env]; ok {
+		if envCfg.Provider != "" {
+			provider = envCfg.Provider
+		}
+		if envCfg.Region != "" {
+			region = envCfg.Region
+		}
+	}
+
+	if provider == "" {
+		provider = "alicloud"
+	}
+	if region == "" {
+		region = "cn-hangzhou"
+	}
+
 	return &DeployConfig{
 		AppName:     "my-app",
 		Environment: env,
-		Provider:    "alicloud",
-		Region:      "cn-hangzhou",
+		Provider:    provider,
+		Region:      region,
 		Resources: []ResourceInfo{
 			{Type: "sql_server", Name: "main"},
 			{Type: "redis", Name: "cache"},
@@ -360,36 +417,112 @@ func loadDeployConfig(env string) (*DeployConfig, error) {
 	}, nil
 }
 
-// Deployment step implementations (placeholders)
+// Deployment step implementations
+// These delegate to the real deploy pipeline in internal/deploy
 
-func runBuildStep(ctx context.Context, config *DeployConfig) error {
-	// TODO: Implement actual build
-	time.Sleep(100 * time.Millisecond) // Simulate work
+func runBuildStep(ctx context.Context, cfg *DeployConfig) error {
+	pipeline := deploy.NewPipeline(false)
+	input := buildPipelineInput(cfg)
+	result := pipeline.Execute(ctx, input)
+	if !result.Success {
+		// Find the build step result
+		for _, s := range result.Steps {
+			if s.Name == "build" && !s.Success {
+				return s.Error
+			}
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+	}
 	return nil
 }
 
-func runPushStep(ctx context.Context, config *DeployConfig) error {
-	// TODO: Implement actual push
-	time.Sleep(100 * time.Millisecond) // Simulate work
+func runPushStep(ctx context.Context, cfg *DeployConfig) error {
+	// Push requires ACR credentials — check availability
+	accessKey := os.Getenv("ALICLOUD_ACCESS_KEY")
+	if accessKey == "" {
+		accessKey = os.Getenv("ALICLOUD_ACCESS_KEY_ID")
+	}
+	if accessKey == "" {
+		return fmt.Errorf("EDEPLOY002: missing ALICLOUD_ACCESS_KEY for registry push")
+	}
+	// Delegate to pipeline
+	pipeline := deploy.NewPipeline(false)
+	input := buildPipelineInput(cfg)
+	result := pipeline.Execute(ctx, input)
+	if !result.Success {
+		for _, s := range result.Steps {
+			if s.Name == "push" && !s.Success {
+				return s.Error
+			}
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+	}
 	return nil
 }
 
-func runProvisionStep(ctx context.Context, config *DeployConfig) error {
-	// TODO: Implement actual provisioning
-	time.Sleep(100 * time.Millisecond) // Simulate work
+func runProvisionStep(ctx context.Context, cfg *DeployConfig) error {
+	return runProvision(cfg.Environment, "", false)
+}
+
+func runK8sDeployStep(ctx context.Context, cfg *DeployConfig) error {
+	pipeline := deploy.NewPipeline(false)
+	input := buildPipelineInput(cfg)
+	result := pipeline.Execute(ctx, input)
+	if !result.Success {
+		for _, s := range result.Steps {
+			if s.Name == "deploy" && !s.Success {
+				return s.Error
+			}
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+	}
 	return nil
 }
 
-func runK8sDeployStep(ctx context.Context, config *DeployConfig) error {
-	// TODO: Implement actual K8s deployment
-	time.Sleep(100 * time.Millisecond) // Simulate work
+func runVerifyStep(ctx context.Context, cfg *DeployConfig) error {
+	pipeline := deploy.NewPipeline(false)
+	input := buildPipelineInput(cfg)
+	result := pipeline.Execute(ctx, input)
+	if !result.Success {
+		for _, s := range result.Steps {
+			if s.Name == "verify" && !s.Success {
+				return s.Error
+			}
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+	}
 	return nil
 }
 
-func runVerifyStep(ctx context.Context, config *DeployConfig) error {
-	// TODO: Implement actual verification
-	time.Sleep(100 * time.Millisecond) // Simulate work
-	return nil
+// buildPipelineInput converts DeployConfig to PipelineInput
+func buildPipelineInput(cfg *DeployConfig) *deploy.PipelineInput {
+	accessKey := os.Getenv("ALICLOUD_ACCESS_KEY")
+	if accessKey == "" {
+		accessKey = os.Getenv("ALICLOUD_ACCESS_KEY_ID")
+	}
+	secretKey := os.Getenv("ALICLOUD_SECRET_KEY")
+	if secretKey == "" {
+		secretKey = os.Getenv("ALICLOUD_ACCESS_KEY_SECRET")
+	}
+
+	return &deploy.PipelineInput{
+		AppName:      cfg.AppName,
+		Env:          cfg.Environment,
+		ConfigPath:   "infracast.yaml",
+		Replicas:     1,
+		Port:         8080,
+		ACRRegion:    cfg.Region,
+		AliAccessKey: accessKey,
+		AliSecretKey: secretKey,
+	}
 }
 
 // openAuditStore opens the state DB and returns an audit store (best-effort, nil if unavailable)

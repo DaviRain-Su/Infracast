@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -54,11 +55,27 @@ func TestProvisionCommandRegistered(t *testing.T) {
 	assert.True(t, names["provision"], "provision command should be registered")
 }
 
-// TestProvisionIsStub validates provision currently returns nil (stub behavior)
-func TestProvisionIsStub(t *testing.T) {
-	cmd := newProvisionCommand()
-	// Execute with default flags — stub should succeed without side effects
-	cmd.SetArgs([]string{})
-	err := cmd.Execute()
-	assert.NoError(t, err, "provision stub should succeed")
+// TestProvisionRequiresConfig validates provision fails gracefully without infracast.yaml
+func TestProvisionRequiresConfig(t *testing.T) {
+	err := runProvision("dev", "/nonexistent/infracast.yaml", false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ECFG001")
+}
+
+// TestProvisionRequiresCredentials validates provision fails without cloud credentials
+func TestProvisionRequiresCredentials(t *testing.T) {
+	// Create a minimal config file for testing
+	tmpDir := t.TempDir()
+	cfgPath := tmpDir + "/infracast.yaml"
+	os.WriteFile(cfgPath, []byte("provider: alicloud\nregion: cn-hangzhou\n"), 0644)
+
+	// Unset credentials
+	os.Unsetenv("ALICLOUD_ACCESS_KEY")
+	os.Unsetenv("ALICLOUD_ACCESS_KEY_ID")
+	os.Unsetenv("ALICLOUD_SECRET_KEY")
+	os.Unsetenv("ALICLOUD_ACCESS_KEY_SECRET")
+
+	err := runProvision("dev", cfgPath, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EPROV001")
 }

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -63,6 +62,7 @@ func TestDeployCommandRegistered(t *testing.T) {
 
 // TestValidateEnvironment validates environment name validation
 func TestValidateEnvironment(t *testing.T) {
+	// Well-known defaults should always pass (even without state store)
 	tests := []struct {
 		env     string
 		wantErr bool
@@ -71,24 +71,31 @@ func TestValidateEnvironment(t *testing.T) {
 		{"staging", false},
 		{"production", false},
 		{"local", false},
-		{"invalid", true},
 		{"", true},
-		{"DEV", true},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.env, func(t *testing.T) {
+		name := tt.env
+		if name == "" {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
 			err := validateEnvironment(tt.env)
 			if tt.wantErr {
 				assert.Error(t, err)
-				if tt.env != "" {
-					assert.Contains(t, err.Error(), tt.env)
-				}
 			} else {
 				assert.NoError(t, err)
 			}
 		})
 	}
+}
+
+// TestValidateEnvironmentUnknownGivesGuidance validates error message for unknown env
+func TestValidateEnvironmentUnknownGivesGuidance(t *testing.T) {
+	err := validateEnvironment("nonexistent-env-xyz")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "env create")
+	assert.Contains(t, err.Error(), "nonexistent-env-xyz")
 }
 
 // TestBuildDeploySteps validates step construction based on options
@@ -129,19 +136,21 @@ func TestBuildDeploySteps(t *testing.T) {
 	})
 }
 
-// TestDeployStepExecution validates individual step placeholders succeed
-func TestDeployStepExecution(t *testing.T) {
-	config := &DeployConfig{
+// TestBuildPipelineInput validates pipeline input construction
+func TestBuildPipelineInput(t *testing.T) {
+	cfg := &DeployConfig{
 		AppName:     "test-app",
-		Environment: "dev",
+		Environment: "staging",
+		Provider:    "alicloud",
+		Region:      "cn-shanghai",
 	}
-	ctx := context.Background()
 
-	assert.NoError(t, runBuildStep(ctx, config))
-	assert.NoError(t, runPushStep(ctx, config))
-	assert.NoError(t, runProvisionStep(ctx, config))
-	assert.NoError(t, runK8sDeployStep(ctx, config))
-	assert.NoError(t, runVerifyStep(ctx, config))
+	input := buildPipelineInput(cfg)
+	assert.Equal(t, "test-app", input.AppName)
+	assert.Equal(t, "staging", input.Env)
+	assert.Equal(t, "cn-shanghai", input.ACRRegion)
+	assert.Equal(t, 1, input.Replicas)
+	assert.Equal(t, 8080, input.Port)
 }
 
 // TestExtractErrorCode validates error code extraction
@@ -208,15 +217,16 @@ func TestDeployOptionsFields(t *testing.T) {
 	assert.True(t, opts.DryRun)
 }
 
-// TestLoadDeployConfig validates config loading returns expected defaults
+// TestLoadDeployConfig validates config loading falls back to defaults when no config file
 func TestLoadDeployConfig(t *testing.T) {
-	config, err := loadDeployConfig("dev")
+	// Without infracast.yaml, should fall back to defaults
+	cfg, err := loadDeployConfig("dev")
 	assert.NoError(t, err)
-	assert.NotNil(t, config)
-	assert.Equal(t, "dev", config.Environment)
-	assert.Equal(t, "alicloud", config.Provider)
-	assert.Equal(t, "cn-hangzhou", config.Region)
-	assert.NotEmpty(t, config.Resources)
+	assert.NotNil(t, cfg)
+	assert.Equal(t, "dev", cfg.Environment)
+	assert.Equal(t, "alicloud", cfg.Provider)
+	assert.Equal(t, "cn-hangzhou", cfg.Region)
+	assert.NotEmpty(t, cfg.Resources)
 }
 
 // TestDeployConfigResourceInfo validates ResourceInfo struct
