@@ -53,3 +53,4 @@ temp/
 
 # E2E runtime artifacts
 e2e/infracfg.json
+health-check
