@@ -322,11 +322,25 @@ func (p *Pipeline) stepDeploy(ctx context.Context, input *PipelineInput) error {
 // stepVerify verifies deployment health
 func (p *Pipeline) stepVerify(ctx context.Context, input *PipelineInput) error {
 	if p.healthChecker == nil {
-		return fmt.Errorf("health checker not initialized")
+		return fmt.Errorf("EDEPLOY050: health checker not initialized")
 	}
 	
 	p.log("  Verifying deployment health...")
-	// TODO: Call health checker
+	
+	// Check deployment status with 5 minute timeout
+	timeout := 5 * time.Minute
+	if err := p.healthChecker.CheckStatus(ctx, input.AppName, timeout); err != nil {
+		return fmt.Errorf("EDEPLOY050: health verification failed: %w", err)
+	}
+	
+	// Additional health check via HTTP endpoint
+	if input.Port > 0 {
+		if err := p.healthChecker.VerifyHealth(ctx, input.AppName, input.Port); err != nil {
+			return fmt.Errorf("EDEPLOY057: application health check failed: %w", err)
+		}
+	}
+	
+	p.log("  Health verification passed")
 	return nil
 }
 
