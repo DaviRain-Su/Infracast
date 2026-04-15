@@ -17,10 +17,25 @@ type Builder struct {
 	timeout time.Duration
 }
 
+// Default timeouts for build operations
+const (
+	DefaultBuildTimeout = 10 * time.Minute
+)
+
 // NewBuilder creates a new builder with default timeout
 func NewBuilder() *Builder {
 	return &Builder{
-		timeout: 5 * time.Minute,
+		timeout: DefaultBuildTimeout,
+	}
+}
+
+// NewBuilderWithTimeout creates a builder with custom timeout
+func NewBuilderWithTimeout(timeout time.Duration) *Builder {
+	if timeout <= 0 {
+		timeout = DefaultBuildTimeout
+	}
+	return &Builder{
+		timeout: timeout,
 	}
 }
 

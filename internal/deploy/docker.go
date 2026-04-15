@@ -11,15 +11,30 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
+// Default timeouts for ACR operations
+const (
+	DefaultACRPushTimeout = 10 * time.Minute
+)
+
 // ACRClient wraps AliCloud Container Registry operations
 type ACRClient struct {
 	client    *cr.Client
 	region    string
 	namespace string
+	timeout   time.Duration
 }
 
 // NewACRClient creates a new ACR client
 func NewACRClient(region, accessKeyID, accessKeySecret, namespace string) (*ACRClient, error) {
+	return NewACRClientWithTimeout(region, accessKeyID, accessKeySecret, namespace, DefaultACRPushTimeout)
+}
+
+// NewACRClientWithTimeout creates a new ACR client with custom timeout
+func NewACRClientWithTimeout(region, accessKeyID, accessKeySecret, namespace string, timeout time.Duration) (*ACRClient, error) {
+	if timeout <= 0 {
+		timeout = DefaultACRPushTimeout
+	}
+	
 	client, err := cr.NewClientWithAccessKey(region, accessKeyID, accessKeySecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ACR client: %w", err)
@@ -29,6 +44,7 @@ func NewACRClient(region, accessKeyID, accessKeySecret, namespace string) (*ACRC
 		client:    client,
 		region:    region,
 		namespace: namespace,
+		timeout:   timeout,
 	}, nil
 }
 
