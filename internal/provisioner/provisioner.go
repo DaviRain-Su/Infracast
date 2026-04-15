@@ -468,8 +468,9 @@ func (p *Provisioner) Destroy(ctx context.Context, envID string) error {
 			return fmt.Errorf("%w: provider not found: %v", ErrDestroyFailed, err)
 		}
 
-		// Destroy resource
-		if err := provider.Destroy(ctx, resource.ID); err != nil {
+		// Destroy resource using type:providerID format
+		destroyID := resource.ResourceType + ":" + resource.ProviderResourceID
+		if err := provider.Destroy(ctx, destroyID); err != nil {
 			resource.Status = string(ResourceStateFailed)
 			resource.ErrorMsg = err.Error()
 			p.store.UpsertResource(ctx, resource)
