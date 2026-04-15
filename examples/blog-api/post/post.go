@@ -3,6 +3,7 @@ package post
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"encore.dev/beta/auth"
@@ -32,7 +33,8 @@ type CreateParams struct {
 //encore:api auth method=POST path=/post.create
 func Create(ctx context.Context, params *CreateParams) (*Post, error) {
 	userID, _ := auth.UserID()
-	authorID := int(userID.Int64())
+	uid, _ := strconv.ParseInt(string(userID), 10, 64)
+	authorID := int(uid)
 
 	if params.Title == "" || params.Content == "" {
 		return nil, &errs.Error{

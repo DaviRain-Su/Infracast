@@ -3,6 +3,7 @@ package user
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"encore.dev/beta/auth"
@@ -103,7 +104,8 @@ func Login(ctx context.Context, params *LoginParams) (*LoginResponse, error) {
 //encore:api auth method=GET path=/user.profile
 func Profile(ctx context.Context) (*User, error) {
 	userID, _ := auth.UserID()
-	uid := int(userID.Int64())
+	uid64, _ := strconv.ParseInt(string(userID), 10, 64)
+	uid := int(uid64)
 
 	var user User
 	err := blogDB.QueryRow(ctx, `

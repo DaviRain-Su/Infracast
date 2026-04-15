@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"encore.dev/beta/auth"
@@ -48,17 +49,12 @@ func Image(ctx context.Context, params *UploadParams) (*UploadResponse, error) {
 
 	// Generate unique filename
 	userID, _ := auth.UserID()
+	uid, _ := strconv.ParseInt(string(userID), 10, 64)
 	timestamp := time.Now().Unix()
-	objectKey := fmt.Sprintf("user_%d/%d_%s", userID.Int64(), timestamp, params.Filename)
+	objectKey := fmt.Sprintf("user_%d/%d_%s", uid, timestamp, params.Filename)
 
 	// Upload to OSS
-	writer, err := UploadBucket.Upload(ctx, objectKey)
-	if err != nil {
-		return nil, &errs.Error{
-			Code:    errs.Internal,
-			Message: "failed to initiate upload",
-		}
-	}
+	writer := UploadBucket.Upload(ctx, objectKey)
 
 	if _, err := writer.Write(params.Content); err != nil {
 		return nil, &errs.Error{
@@ -75,7 +71,8 @@ func Image(ctx context.Context, params *UploadParams) (*UploadResponse, error) {
 	}
 
 	// Generate URL
-	url := fmt.Sprintf("https://%s/%s", UploadBucket.PublicBaseURL(), objectKey)
+	publicURL := UploadBucket.PublicURL(objectKey)
+	url := publicURL.String()
 
 	return &UploadResponse{
 		URL:      url,
@@ -99,13 +96,7 @@ func Get(ctx context.Context, params *GetParams) ([]byte, error) {
 		}
 	}
 
-	reader, err := UploadBucket.Download(ctx, params.Key)
-	if err != nil {
-		return nil, &errs.Error{
-			Code:    errs.NotFound,
-			Message: "file not found",
-		}
-	}
+	reader := UploadBucket.Download(ctx, params.Key)
 	defer reader.Close()
 
 	return io.ReadAll(reader)
@@ -121,7 +112,7 @@ func Delete(ctx context.Context, params *GetParams) error {
 		}
 	}
 
-	if err := UploadBucket.Delete(ctx, params.Key); err != nil {
+	if err := UploadBucket.Remove(ctx, params.Key); err != nil {
 		return &errs.Error{
 			Code:    errs.Internal,
 			Message: "failed to delete file",

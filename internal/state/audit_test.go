@@ -186,6 +186,7 @@ func TestAuditActionConstants(t *testing.T) {
 // TestGenerateAuditID validates event ID generation
 func TestGenerateAuditID(t *testing.T) {
 	id1 := generateAuditID()
+	time.Sleep(1 * time.Millisecond)
 	id2 := generateAuditID()
 
 	assert.NotEmpty(t, id1)
