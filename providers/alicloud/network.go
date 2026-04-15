@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
 )
 
@@ -64,7 +63,6 @@ func (p *Provider) ensureVPC(region string) (string, error) {
 	describeReq := vpc.CreateDescribeVpcsRequest()
 	describeReq.RegionId = region
 	describeReq.VpcName = networkVPCName(region)
-	describeReq.PageSize = requests.NewInteger(100)
 
 	describeResp, err := p.vpcClient.DescribeVpcs(describeReq)
 	if err == nil && describeResp != nil && describeResp.TotalCount > 0 && len(describeResp.Vpcs.Vpc) > 0 {
@@ -77,6 +75,14 @@ func (p *Provider) ensureVPC(region string) (string, error) {
 		return existing.VpcId, nil
 	}
 
+	// Fallback: reuse any existing infracast VPC in this region.
+	if reusableID, found := p.findReusableVPC(region); found {
+		if err := p.waitForVPCAvailable(reusableID); err != nil {
+			return "", fmt.Errorf("failed to wait for reusable VPC to become available: %w", err)
+		}
+		return reusableID, nil
+	}
+
 	createReq := vpc.CreateCreateVpcRequest()
 	createReq.RegionId = region
 	createReq.VpcName = networkVPCName(region)
@@ -84,6 +90,15 @@ func (p *Provider) ensureVPC(region string) (string, error) {
 
 	resp, err := p.vpcClient.CreateVpc(createReq)
 	if err != nil {
+		// If VPC quota is exhausted, try reusing an existing VPC again.
+		if strings.Contains(err.Error(), "QuotaExceeded.Vpc") {
+			if reusableID, found := p.findReusableVPC(region); found {
+				if waitErr := p.waitForVPCAvailable(reusableID); waitErr != nil {
+					return "", fmt.Errorf("failed to wait for reusable VPC after quota exceeded: %w", waitErr)
+				}
+				return reusableID, nil
+			}
+		}
 		return "", fmt.Errorf("failed to create default VPC: %w", err)
 	}
 	if resp == nil || resp.VpcId == "" {
@@ -98,12 +113,45 @@ func (p *Provider) ensureVPC(region string) (string, error) {
 	return resp.VpcId, nil
 }
 
+func (p *Provider) findReusableVPC(region string) (string, bool) {
+	page := 1
+	seen := 0
+	var anyAvailable string
+	for {
+		req := vpc.CreateDescribeVpcsRequest()
+		req.RegionId = region
+		req.PageNumber = fmt.Sprintf("%d", page)
+
+		resp, err := p.vpcClient.DescribeVpcs(req)
+		if err != nil || resp == nil || len(resp.Vpcs.Vpc) == 0 {
+			return "", false
+		}
+
+		seen += len(resp.Vpcs.Vpc)
+		for _, item := range resp.Vpcs.Vpc {
+			if strings.HasPrefix(item.VpcName, networkVPCNamePrefix) {
+				return item.VpcId, true
+			}
+			if anyAvailable == "" && item.Status == "Available" {
+				anyAvailable = item.VpcId
+			}
+		}
+
+		if seen >= resp.TotalCount {
+			if anyAvailable != "" {
+				return anyAvailable, true
+			}
+			return "", false
+		}
+		page++
+	}
+}
+
 func (p *Provider) ensureVSwitch(vpcID string) (string, error) {
 	describeReq := vpc.CreateDescribeVSwitchesRequest()
 	describeReq.RegionId = p.region
 	describeReq.VpcId = vpcID
 	describeReq.VSwitchName = networkVSwitchName(p.region)
-	describeReq.PageSize = requests.NewInteger(100)
 
 	describeResp, err := p.vpcClient.DescribeVSwitches(describeReq)
 	if err == nil && describeResp != nil && describeResp.TotalCount > 0 && len(describeResp.VSwitches.VSwitch) > 0 {
