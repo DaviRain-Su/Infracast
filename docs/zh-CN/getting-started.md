@@ -115,8 +115,10 @@ infracast status --env dev
 # 查看日志
 infracast logs --env dev
 
-# 打开应用 URL
-infracast open --env dev
+# 通过 port-forward 验证
+kubectl port-forward svc/$(infracast status --env dev 2>/dev/null | grep -o '[^ ]*-dev') -n $(infracast status --env dev 2>/dev/null | grep -o '[^ ]*-dev') 8080:80 &
+curl -s http://localhost:8080/livez | jq .
+kill %1
 ```
 
 ## 下一步
@@ -144,9 +146,9 @@ notifications:
 
 ### 了解更多
 
-- [Technical Spec](03-technical-spec.md)
-- [Task Breakdown](04-task-breakdown.md)
-- [Single-Cloud Operations Handbook](06-single-cloud-operations.md)
+- [Technical Spec](../03-technical-spec.md)
+- [Task Breakdown](../04-task-breakdown.md)
+- [单云运维手册](06-single-cloud-operations.md)
 
 ## 快速命令流程
 

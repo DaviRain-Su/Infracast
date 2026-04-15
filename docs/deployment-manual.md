@@ -286,12 +286,14 @@ infracast provision --env dev
 # Deploy
 infracast deploy --env dev
 
-# Verify health
-curl -s "$(infracast status --env dev --output url)/livez" | jq .
+# Verify health (port-forward to service)
+kubectl port-forward svc/demo-app -n demo-app-dev 8080:80 &
+curl -s http://localhost:8080/livez | jq .
 # Expected: {"status":"ok","uptime":"..."}
 
-curl -s "$(infracast status --env dev --output url)/readyz" | jq .
+curl -s http://localhost:8080/readyz | jq .
 # Expected: {"status":"ready","checks":{"self":"ok"},...}
+kill %1
 
 # View audit trail
 infracast logs --limit 5
@@ -308,8 +310,10 @@ infracast destroy --env dev --apply --keep-vpc 1
 SIMULATE_FAILURE=true infracast deploy --env dev
 
 # Verify readiness probe reports unhealthy
-curl -s "$(infracast status --env dev --output url)/readyz" | jq .
+kubectl port-forward svc/demo-app -n demo-app-dev 8080:80 &
+curl -s http://localhost:8080/readyz | jq .
 # Expected: {"status":"unhealthy","checks":{"self":"fail"},...}
+kill %1
 
 # Check error audit trail
 infracast logs --level ERROR --since 10m

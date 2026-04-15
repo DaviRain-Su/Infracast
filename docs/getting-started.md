@@ -116,8 +116,10 @@ infracast status --env dev
 # View logs
 infracast logs --env dev
 
-# Open application URL
-infracast open --env dev
+# Verify via port-forward
+kubectl port-forward svc/$(infracast status --env dev 2>/dev/null | grep -o '[^ ]*-dev') -n $(infracast status --env dev 2>/dev/null | grep -o '[^ ]*-dev') 8080:80 &
+curl -s http://localhost:8080/livez | jq .
+kill %1
 ```
 
 ## Next Steps

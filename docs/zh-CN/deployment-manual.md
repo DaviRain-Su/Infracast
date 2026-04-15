@@ -286,12 +286,14 @@ infracast provision --env dev
 # 部署
 infracast deploy --env dev
 
-# 验证健康
-curl -s "$(infracast status --env dev --output url)/livez" | jq .
+# 验证健康（port-forward 到服务）
+kubectl port-forward svc/demo-app -n demo-app-dev 8080:80 &
+curl -s http://localhost:8080/livez | jq .
 # 预期：{"status":"ok","uptime":"..."}
 
-curl -s "$(infracast status --env dev --output url)/readyz" | jq .
+curl -s http://localhost:8080/readyz | jq .
 # 预期：{"status":"ready","checks":{"self":"ok"},...}
+kill %1
 
 # 查看审计追踪
 infracast logs --limit 5
@@ -308,8 +310,10 @@ infracast destroy --env dev --apply --keep-vpc 1
 SIMULATE_FAILURE=true infracast deploy --env dev
 
 # 验证就绪探针报告异常
-curl -s "$(infracast status --env dev --output url)/readyz" | jq .
+kubectl port-forward svc/demo-app -n demo-app-dev 8080:80 &
+curl -s http://localhost:8080/readyz | jq .
 # 预期：{"status":"unhealthy","checks":{"self":"fail"},...}
+kill %1
 
 # 检查错误审计追踪
 infracast logs --level ERROR --since 10m
