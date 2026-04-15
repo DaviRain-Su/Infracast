@@ -406,9 +406,9 @@ func (p *Provider) waitForDBInstanceReady(ctx context.Context, instanceID string
 	// Poll for up to 10 minutes (RDS creation takes time)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	timeout := time.After(10 * time.Minute)
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -418,16 +418,16 @@ func (p *Provider) waitForDBInstanceReady(ctx context.Context, instanceID string
 		case <-ticker.C:
 			req := rds.CreateDescribeDBInstanceAttributeRequest()
 			req.DBInstanceId = instanceID
-			
+
 			resp, err := p.rdsClient.DescribeDBInstanceAttribute(req)
 			if err != nil {
 				continue // Retry on error
 			}
-			
+
 			if len(resp.Items.DBInstanceAttribute) == 0 {
 				continue
 			}
-			
+
 			attr := resp.Items.DBInstanceAttribute[0]
 			// Check if instance is running
 			if attr.DBInstanceStatus == "Running" {
@@ -450,7 +450,7 @@ func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, pass
 	req.DBInstanceId = instanceID
 	req.AccountName = username
 	req.AccountPassword = password
-	
+
 	_, err := p.rdsClient.ResetAccountPassword(req)
 	if err != nil {
 		// If reset fails, try creating a new account
@@ -459,7 +459,7 @@ func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, pass
 		createReq.AccountName = username
 		createReq.AccountPassword = password
 		createReq.AccountType = "Super"
-		
+
 		_, err = p.rdsClient.CreateAccount(createReq)
 		if err != nil {
 			// Keyword/reserved account names may be forbidden for certain engines.
@@ -475,7 +475,7 @@ func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, pass
 			return "", fmt.Errorf("failed to set password: %w", err)
 		}
 	}
-	
+
 	return username, nil
 }
 
@@ -618,9 +618,9 @@ func (p *Provider) waitForCacheInstanceReady(ctx context.Context, instanceID str
 	// Poll for up to 10 minutes (Redis creation takes time)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	timeout := time.After(10 * time.Minute)
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -631,12 +631,12 @@ func (p *Provider) waitForCacheInstanceReady(ctx context.Context, instanceID str
 			req := r_kvstore.CreateDescribeInstancesRequest()
 			req.RegionId = p.region
 			req.InstanceIds = instanceID
-			
+
 			resp, err := p.kvstoreClient.DescribeInstances(req)
 			if err != nil {
 				continue // Retry on error
 			}
-			
+
 			// Check if instance is available
 			for _, inst := range resp.Instances.KVStoreInstance {
 				if inst.InstanceId == instanceID {
@@ -691,7 +691,7 @@ func (p *Provider) createRedisWithNewVSwitch(vpcID, instanceClass string, spec p
 	zoneReq := r_kvstore.CreateDescribeAvailableResourceRequest()
 	zoneReq.RegionId = p.region
 	zoneReq.InstanceChargeType = "PostPaid"
-	
+
 	zoneResp, err := p.kvstoreClient.DescribeAvailableResource(zoneReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe available zones for Redis: %w", err)
@@ -796,7 +796,7 @@ func (p *Provider) setCachePassword(ctx context.Context, instanceID, password st
 	req.InstanceId = instanceID
 	req.AccountName = accountName
 	req.AccountPassword = password
-	
+
 	_, err := p.kvstoreClient.ResetAccountPassword(req)
 	if err != nil {
 		// Some instance types do not expose a resettable account. Fall back to
@@ -813,6 +813,6 @@ func (p *Provider) setCachePassword(ctx context.Context, instanceID, password st
 		}
 		return fmt.Errorf("failed to set Redis password: %w", err)
 	}
-	
+
 	return nil
 }

@@ -15,14 +15,14 @@ import (
 // BuildMeta represents build-time metadata extracted from the application
 // This replaces Encore IR dependency for P0
 type BuildMeta struct {
-	AppName        string   `json:"app_name"`
-	Services       []string `json:"services"`
-	Databases      []string `json:"databases"`
-	Caches         []string `json:"caches"`
-	ObjectStores   []string `json:"object_stores"`
-	PubSubTopics   []string `json:"pubsub_topics"` // P1 placeholder
-	BuildCommit    string   `json:"build_commit"`
-	BuildImage     string   `json:"build_image"`
+	AppName      string   `json:"app_name"`
+	Services     []string `json:"services"`
+	Databases    []string `json:"databases"`
+	Caches       []string `json:"caches"`
+	ObjectStores []string `json:"object_stores"`
+	PubSubTopics []string `json:"pubsub_topics"` // P1 placeholder
+	BuildCommit  string   `json:"build_commit"`
+	BuildImage   string   `json:"build_image"`
 }
 
 // ResourceDeclaration represents a discovered resource declaration in source code
@@ -82,7 +82,7 @@ func (m *Mapper) mapDatabase(name string) providers.ResourceSpec {
 		Engine:        "postgresql", // Default
 		Version:       "15",         // Default
 		InstanceClass: "rds.pg.s1.small",
-		StorageGB:     20, // Default per Tech Spec v1.1
+		StorageGB:     20,  // Default per Tech Spec v1.1
 		HighAvail:     nil, // Default: no HA preference
 	}
 

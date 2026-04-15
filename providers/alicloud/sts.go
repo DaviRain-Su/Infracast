@@ -21,12 +21,12 @@ type STSClient struct {
 func NewSTSClient(region, accessKeyID, accessKeySecret string) (*STSClient, error) {
 	config := sdk.NewConfig()
 	cred := credentials.NewAccessKeyCredential(accessKeyID, accessKeySecret)
-	
+
 	client, err := sts.NewClientWithOptions(region, config, cred)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create STS client: %w", err)
 	}
-	
+
 	return &STSClient{
 		client: client,
 		region: region,
@@ -41,22 +41,22 @@ func (s *STSClient) AssumeRole(roleARN, sessionName string, durationSeconds int)
 	if durationSeconds > 43200 {
 		durationSeconds = 43200 // Max 12 hours
 	}
-	
+
 	request := sts.CreateAssumeRoleRequest()
 	request.RoleArn = roleARN
 	request.RoleSessionName = sessionName
 	request.DurationSeconds = requests.NewInteger(durationSeconds)
-	
+
 	response, err := s.client.AssumeRole(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to assume role: %w", err)
 	}
-	
+
 	expiration, err := time.Parse("2006-01-02T15:04:05Z", response.Credentials.Expiration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse expiration: %w", err)
 	}
-	
+
 	return &TemporaryCredentials{
 		AccessKeyID:     response.Credentials.AccessKeyId,
 		AccessKeySecret: response.Credentials.AccessKeySecret,

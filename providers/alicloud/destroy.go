@@ -17,8 +17,8 @@ import (
 
 // DestroyOptions contains options for destroy operation
 type DestroyOptions struct {
-	DryRun bool
-	Prefix string
+	DryRun  bool
+	Prefix  string
 	KeepVPC int
 }
 

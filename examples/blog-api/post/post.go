@@ -30,6 +30,7 @@ type CreateParams struct {
 }
 
 // Create creates a new blog post
+//
 //encore:api auth method=POST path=/post.create
 func Create(ctx context.Context, params *CreateParams) (*Post, error) {
 	userID, _ := auth.UserID()
@@ -68,6 +69,7 @@ type GetParams struct {
 }
 
 // Get returns a single blog post
+//
 //encore:api public method=GET path=/post.get
 func Get(ctx context.Context, params *GetParams) (*Post, error) {
 	if params.ID <= 0 {
@@ -109,6 +111,7 @@ type ListResponse struct {
 }
 
 // List returns a list of blog posts
+//
 //encore:api public method=GET path=/post.list
 func List(ctx context.Context, params *ListParams) (*ListResponse, error) {
 	if params.Page <= 0 {
@@ -162,6 +165,7 @@ type SearchParams struct {
 }
 
 // Search searches blog posts
+//
 //encore:api public method=POST path=/post.search
 func Search(ctx context.Context, params *SearchParams) (*ListResponse, error) {
 	if params.Query == "" {
@@ -200,9 +204,9 @@ func Search(ctx context.Context, params *SearchParams) (*ListResponse, error) {
 	}
 
 	return &ListResponse{
-		Posts: posts,
-		Total: len(posts),
-		Page:  1,
+		Posts:    posts,
+		Total:    len(posts),
+		Page:     1,
 		PageSize: params.Limit,
 	}, nil
 }

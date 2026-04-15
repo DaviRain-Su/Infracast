@@ -35,13 +35,13 @@ func TestSpecHash_Determinism(t *testing.T) {
 // Test 2: Different specs produce different hashes
 func TestSpecHash_DifferentSpecs(t *testing.T) {
 	spec1 := providers.DatabaseSpec{
-		Engine:   "mysql",
-		Version:  "8.0",
+		Engine:    "mysql",
+		Version:   "8.0",
 		StorageGB: 50,
 	}
 	spec2 := providers.DatabaseSpec{
-		Engine:   "mysql",
-		Version:  "5.7",
+		Engine:    "mysql",
+		Version:   "5.7",
 		StorageGB: 50,
 	}
 
@@ -126,15 +126,15 @@ func TestSpecHash_Database_Fields(t *testing.T) {
 // Test 4: Metadata exclusion - name should not affect hash
 func TestSpecHash_MetadataExclusion(t *testing.T) {
 	spec1 := providers.DatabaseSpec{
-		Name:     "db1",
-		Engine:   "mysql",
-		Version:  "8.0",
+		Name:      "db1",
+		Engine:    "mysql",
+		Version:   "8.0",
 		StorageGB: 50,
 	}
 	spec2 := providers.DatabaseSpec{
-		Name:     "db2",
-		Engine:   "mysql",
-		Version:  "8.0",
+		Name:      "db2",
+		Engine:    "mysql",
+		Version:   "8.0",
 		StorageGB: 50,
 	}
 

@@ -71,7 +71,7 @@ func specHashDatabase(spec providers.DatabaseSpec) string {
 	if spec.HighAvail != nil {
 		highAvail = *spec.HighAvail
 	}
-	
+
 	m := map[string]interface{}{
 		"engine":         spec.Engine,
 		"high_avail":     highAvail,
@@ -118,9 +118,9 @@ func specHashObjectStorage(spec providers.ObjectStorageSpec) string {
 // specHashCompute generates canonical hash for compute spec
 func specHashCompute(spec providers.ComputeSpec) string {
 	m := map[string]interface{}{
-		"cpu":     spec.CPU,
-		"memory":  spec.Memory,
-		"port":    spec.Port,
+		"cpu":      spec.CPU,
+		"memory":   spec.Memory,
+		"port":     spec.Port,
 		"replicas": spec.Replicas,
 	}
 

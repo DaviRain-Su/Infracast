@@ -22,11 +22,11 @@ const (
 
 // ACRClient wraps AliCloud Container Registry operations
 type ACRClient struct {
-	client        *cr.Client
-	region        string
-	namespace     string
-	timeout       time.Duration
-	accessKeyID   string
+	client          *cr.Client
+	region          string
+	namespace       string
+	timeout         time.Duration
+	accessKeyID     string
 	accessKeySecret string
 }
 
@@ -40,7 +40,7 @@ func NewACRClientWithTimeout(region, accessKeyID, accessKeySecret, namespace str
 	if timeout <= 0 {
 		timeout = DefaultACRPushTimeout
 	}
-	
+
 	client, err := cr.NewClientWithAccessKey(region, accessKeyID, accessKeySecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ACR client: %w", err)
@@ -132,7 +132,7 @@ func (a *ACRClient) pushWithSDK(ctx context.Context, localImage, acrImage string
 }
 
 // getACRAuth creates ACR authenticator using access key credentials
-// For ACR Personal Edition, the access key ID is used as username and 
+// For ACR Personal Edition, the access key ID is used as username and
 // access key secret as password
 func (a *ACRClient) getACRAuth(ctx context.Context) (authn.Authenticator, error) {
 	username := strings.TrimSpace(os.Getenv("ACR_USERNAME"))
@@ -147,7 +147,7 @@ func (a *ACRClient) getACRAuth(ctx context.Context) (authn.Authenticator, error)
 	if a.accessKeyID == "" || a.accessKeySecret == "" {
 		return nil, fmt.Errorf("ACR credentials not initialized (set AK/SK or ACR_USERNAME/ACR_PASSWORD)")
 	}
-	
+
 	// ACR Personal Edition authentication uses access key as credentials
 	// Username: access key ID
 	// Password: access key secret
@@ -175,14 +175,14 @@ func extractRepoName(image string) string {
 
 // DeployConfig holds deployment configuration
 type DeployConfig struct {
-	AppName     string
-	Env         string
-	Image       string
-	Commit      string
-	Replicas    int
-	Port        int
-	EnvVars     map[string]string
-	ConfigPath  string // Path to infracfg.json
+	AppName    string
+	Env        string
+	Image      string
+	Commit     string
+	Replicas   int
+	Port       int
+	EnvVars    map[string]string
+	ConfigPath string // Path to infracfg.json
 }
 
 // K8sResources holds generated Kubernetes manifests

@@ -452,12 +452,12 @@ func TestPipeline_PartialFailure(t *testing.T) {
 	// Verify isolation: original resources remain provisioned, new one failed
 	stateResources2, err := store.ListResourcesByEnv(ctx, "partial-test")
 	require.NoError(t, err)
-	
+
 	for _, res := range stateResources2 {
 		switch res.ResourceName {
 		case "db1", "db2":
 			// Original resources should remain provisioned (isolation)
-			assert.Equal(t, "provisioned", res.Status, 
+			assert.Equal(t, "provisioned", res.Status,
 				"Existing resource %s should remain provisioned", res.ResourceName)
 		case "failing-cache":
 			// New failing resource should be in failed state

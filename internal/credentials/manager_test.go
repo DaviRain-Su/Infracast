@@ -293,9 +293,9 @@ func TestManager_GetCredentialsSTSExpiration(t *testing.T) {
 
 	// Store STS credentials that are already expired
 	sts := STSCredential{
-		RoleARN:    "arn:aws:iam::123:role/test",
+		RoleARN:     "arn:aws:iam::123:role/test",
 		AccessKeyID: "STS123",
-		Expiration: time.Now().Add(-1 * time.Hour), // Expired 1 hour ago
+		Expiration:  time.Now().Add(-1 * time.Hour), // Expired 1 hour ago
 	}
 	m.StoreWithSTS("alicloud", sts, "cn-hangzhou")
 
@@ -315,7 +315,7 @@ func TestManager_GetCredentialsSTSValid(t *testing.T) {
 	sts := STSCredential{
 		RoleARN:     "arn:aws:iam::123:role/test",
 		AccessKeyID: "STS123",
-		Expiration: time.Now().Add(1 * time.Hour), // Valid for 1 more hour
+		Expiration:  time.Now().Add(1 * time.Hour), // Valid for 1 more hour
 	}
 	m.StoreWithSTS("alicloud", sts, "cn-hangzhou")
 

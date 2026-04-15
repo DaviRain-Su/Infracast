@@ -107,16 +107,16 @@ func TestValidateBuildMeta(t *testing.T) {
 
 	// Valid meta
 	validMeta := &mapper.BuildMeta{
-		AppName:   "myapp",
+		AppName:     "myapp",
 		BuildCommit: "abc123",
-		Services:  []string{"api"},
+		Services:    []string{"api"},
 	}
 	assert.NoError(t, builder.ValidateBuildMeta(validMeta))
 
 	// Missing app name
 	invalidMeta := &mapper.BuildMeta{
 		BuildCommit: "abc123",
-		Services:  []string{"api"},
+		Services:    []string{"api"},
 	}
 	assert.Error(t, builder.ValidateBuildMeta(invalidMeta))
 

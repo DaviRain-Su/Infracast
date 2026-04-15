@@ -55,16 +55,16 @@ func (b *Builder) Build(ctx context.Context, appName, commit string) (*BuildResu
 	defer cancel()
 
 	imageTag := fmt.Sprintf("%s:%s", appName, commit[:7])
-	
+
 	// Execute encore build
 	cmd := exec.CommandContext(ctx, "encore", "build", "docker", imageTag)
 	if appRoot := os.Getenv("ENCORE_APP_ROOT"); appRoot != "" {
 		cmd.Dir = appRoot
 	}
-	
+
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
-	
+
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("EDEPLOY001: build timeout after %v", b.timeout)
@@ -99,7 +99,7 @@ func (b *Builder) parseImageTag(output string) string {
 		`Image tag:\s+(\S+)`,
 		`tag:\s+(\S+)`,
 	}
-	
+
 	for _, pattern := range patterns {
 		re := regexp.MustCompile(pattern)
 		matches := re.FindStringSubmatch(output)
@@ -107,7 +107,7 @@ func (b *Builder) parseImageTag(output string) string {
 			return matches[1]
 		}
 	}
-	
+
 	return ""
 }
 
@@ -117,7 +117,7 @@ func (b *Builder) extractBuildMeta(output, appName, commit string) mapper.BuildM
 		AppName:     appName,
 		BuildCommit: commit,
 	}
-	
+
 	// Parse services from output
 	// Look for lines like "Building service: api" or "Service: api"
 	re := regexp.MustCompile(`(?i)(?:building service|service):\s*(\w+)`)
@@ -127,12 +127,12 @@ func (b *Builder) extractBuildMeta(output, appName, commit string) mapper.BuildM
 			meta.Services = append(meta.Services, match[1])
 		}
 	}
-	
+
 	// If no services found in output, use defaults
 	if len(meta.Services) == 0 {
 		meta.Services = []string{appName}
 	}
-	
+
 	return meta
 }
 
@@ -160,7 +160,7 @@ func (b *Builder) BuildWithConfig(ctx context.Context, config *BuildConfig) (*Bu
 	if config.Timeout > 0 {
 		b.timeout = config.Timeout
 	}
-	
+
 	return b.Build(ctx, config.AppName, config.Commit)
 }
 
@@ -175,27 +175,27 @@ type BuildConfig struct {
 func (b *Builder) StreamBuild(ctx context.Context, appName, commit string, outputChan chan<- string) (*BuildResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
-	
+
 	imageTag := fmt.Sprintf("%s:%s", appName, commit[:7])
 	cmd := exec.CommandContext(ctx, "encore", "build", "docker", imageTag)
 	if appRoot := os.Getenv("ENCORE_APP_ROOT"); appRoot != "" {
 		cmd.Dir = appRoot
 	}
-	
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("EDEPLOY001: failed to create stdout pipe: %w", err)
 	}
-	
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return nil, fmt.Errorf("EDEPLOY001: failed to create stderr pipe: %w", err)
 	}
-	
+
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("EDEPLOY001: failed to start build: %w", err)
 	}
-	
+
 	// Stream output
 	go func() {
 		scanner := bufio.NewScanner(stdout)
@@ -204,7 +204,7 @@ func (b *Builder) StreamBuild(ctx context.Context, appName, commit string, outpu
 			outputChan <- line
 		}
 	}()
-	
+
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
@@ -212,11 +212,11 @@ func (b *Builder) StreamBuild(ctx context.Context, appName, commit string, outpu
 			outputChan <- line
 		}
 	}()
-	
+
 	if err := cmd.Wait(); err != nil {
 		return nil, fmt.Errorf("EDEPLOY001: build failed: %w", err)
 	}
-	
+
 	return &BuildResult{
 		Success:  true,
 		ImageTag: imageTag,

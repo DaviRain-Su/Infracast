@@ -14,7 +14,7 @@ type MockCloudProvider struct {
 	name        string
 	shouldError bool
 	errorType   string // "retryable" or "non-retryable"
-	
+
 	// Track provisioned resources
 	mu        sync.RWMutex
 	databases map[string]*providers.DatabaseOutput

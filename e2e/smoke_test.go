@@ -127,7 +127,7 @@ func TestHelloWorldDeployment(t *testing.T) {
 		// Verify error contains expected error code
 		if result.Error != nil {
 			errStr := result.Error.Error()
-			assert.True(t, 
+			assert.True(t,
 				strings.Contains(errStr, "EDEPLOY") || strings.Contains(errStr, "not initialized"),
 				"Error should contain EDEPLOY code or initialization error, got: %s", errStr)
 		}

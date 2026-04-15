@@ -30,6 +30,7 @@ type UploadResponse struct {
 }
 
 // Image uploads an image to OSS
+//
 //encore:api auth method=POST path=/upload.image
 func Image(ctx context.Context, params *UploadParams) (*UploadResponse, error) {
 	if params.Filename == "" || len(params.Content) == 0 {
@@ -87,6 +88,7 @@ type GetParams struct {
 }
 
 // Get retrieves an uploaded file
+//
 //encore:api auth method=GET path=/upload.get
 func Get(ctx context.Context, params *GetParams) ([]byte, error) {
 	if params.Key == "" {
@@ -103,6 +105,7 @@ func Get(ctx context.Context, params *GetParams) ([]byte, error) {
 }
 
 // Delete deletes an uploaded file
+//
 //encore:api auth method=DELETE path=/upload.delete
 func Delete(ctx context.Context, params *GetParams) error {
 	if params.Key == "" {

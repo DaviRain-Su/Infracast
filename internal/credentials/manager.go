@@ -9,10 +9,10 @@ import (
 
 // Credential represents cloud provider credentials
 type Credential struct {
-	Provider         string
-	AccessKeyID      string
-	AccessKeySecret  string
-	Region           string
+	Provider        string
+	AccessKeyID     string
+	AccessKeySecret string
+	Region          string
 	// STS credentials (optional, preferred for production)
 	STS *STSCredential
 }
@@ -29,8 +29,8 @@ type STSCredential struct {
 
 // CredentialConfig provides configuration for credential retrieval
 type CredentialConfig struct {
-	Provider    string        // Cloud provider name (e.g., "alicloud")
-	Region      string        // Target region
+	Provider      string        // Cloud provider name (e.g., "alicloud")
+	Region        string        // Target region
 	RefreshWindow time.Duration // Auto-refresh before expiration (default: 5min)
 }
 
@@ -60,10 +60,10 @@ func (m *Manager) Store(provider, accessKey, secretKey, region string) error {
 	}
 
 	m.credentials[provider] = Credential{
-		Provider:  provider,
-		AccessKeyID: accessKey,
+		Provider:        provider,
+		AccessKeyID:     accessKey,
 		AccessKeySecret: secretKey,
-		Region:    region,
+		Region:          region,
 	}
 	return nil
 }
@@ -100,12 +100,12 @@ func (m *Manager) GetForRegion(provider, region string) (Credential, error) {
 	if !exists {
 		return Credential{}, fmt.Errorf("ECRED005: credentials not found for provider: %s", provider)
 	}
-	
+
 	// If region specified, override
 	if region != "" {
 		cred.Region = region
 	}
-	
+
 	return cred, nil
 }
 
@@ -138,7 +138,7 @@ func (m *Manager) RefreshSTS(ctx context.Context, provider string, client STSCli
 	if !exists {
 		return fmt.Errorf("ECRED005: credentials not found for provider: %s", provider)
 	}
-	
+
 	if cred.STS == nil {
 		return fmt.Errorf("ECRED006: no STS configuration for provider: %s", provider)
 	}

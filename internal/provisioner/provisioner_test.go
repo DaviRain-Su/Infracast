@@ -18,8 +18,8 @@ type MockAlicloudProvider struct {
 	ShouldError bool
 }
 
-func (m *MockAlicloudProvider) Name() string { return "alicloud" }
-func (m *MockAlicloudProvider) DisplayName() string { return "Mock Provider" }
+func (m *MockAlicloudProvider) Name() string                { return "alicloud" }
+func (m *MockAlicloudProvider) DisplayName() string         { return "Mock Provider" }
 func (m *MockAlicloudProvider) Regions() []providers.Region { return nil }
 func (m *MockAlicloudProvider) ProvisionDatabase(ctx context.Context, spec providers.DatabaseSpec) (*providers.DatabaseOutput, error) {
 	if m.ShouldError {
@@ -45,15 +45,19 @@ func (m *MockAlicloudProvider) ProvisionCompute(ctx context.Context, spec provid
 	}
 	return &providers.ComputeOutput{ResourceID: "comp-123", Namespace: "default"}, nil
 }
-func (m *MockAlicloudProvider) Plan(ctx context.Context, specs []providers.ResourceSpec) (*providers.PlanResult, error) { return nil, nil }
-func (m *MockAlicloudProvider) Apply(ctx context.Context, plan *providers.PlanResult) (*providers.ApplyResult, error) { return nil, nil }
+func (m *MockAlicloudProvider) Plan(ctx context.Context, specs []providers.ResourceSpec) (*providers.PlanResult, error) {
+	return nil, nil
+}
+func (m *MockAlicloudProvider) Apply(ctx context.Context, plan *providers.PlanResult) (*providers.ApplyResult, error) {
+	return nil, nil
+}
 func (m *MockAlicloudProvider) Destroy(ctx context.Context, envID string) error {
 	if m.ShouldError {
 		return assert.AnError
 	}
 	return nil
 }
-func (m *MockAlicloudProvider) OTLPEndpoint() string { return "" }
+func (m *MockAlicloudProvider) OTLPEndpoint() string             { return "" }
 func (m *MockAlicloudProvider) DashboardURL(envID string) string { return "" }
 
 func setupTestProvisioner(t *testing.T) (*Provisioner, *state.Store, context.Context) {
@@ -63,14 +67,14 @@ func setupTestProvisioner(t *testing.T) (*Provisioner, *state.Store, context.Con
 
 	// Register mock provider with the package-level registry
 	mockProvider := &MockAlicloudProvider{}
-	
+
 	// Create credentials manager (nil for tests)
 	creds := credentials.NewManager()
 	creds.Store("alicloud", "AK123", "SK456", "cn-hangzhou")
 
 	prov := NewProvisioner(store, creds)
 	prov.registry.Register(mockProvider)
-	
+
 	return prov, store, ctx
 }
 
@@ -244,7 +248,7 @@ func TestProvisioner_Apply_NoOp(t *testing.T) {
 			{
 				Action: "noop",
 				Spec: providers.ResourceSpec{
-					Type: "database",
+					Type:         "database",
 					DatabaseSpec: &providers.DatabaseSpec{Name: "mydb"},
 				},
 			},
@@ -579,7 +583,6 @@ func TestHasSideEffect(t *testing.T) {
 	assert.False(t, HasSideEffect(nil))
 }
 
-
 // TestProvision_SummaryCounts validates summary counts for mixed operations (B1-R1)
 func TestProvision_SummaryCounts(t *testing.T) {
 	prov, _, ctx := setupTestProvisioner(t)
@@ -598,9 +601,9 @@ func TestProvision_SummaryCounts(t *testing.T) {
 		{
 			Type: "cache",
 			CacheSpec: &providers.CacheSpec{
-				Name:      "cache1",
-				Engine:    "redis",
-				MemoryMB:  256,
+				Name:     "cache1",
+				Engine:   "redis",
+				MemoryMB: 256,
 			},
 		},
 	}
@@ -650,9 +653,9 @@ func TestProvision_SummaryCounts(t *testing.T) {
 		{
 			Type: "cache",
 			CacheSpec: &providers.CacheSpec{
-				Name:      "cache1",
-				Engine:    "redis",
-				MemoryMB:  256,
+				Name:     "cache1",
+				Engine:   "redis",
+				MemoryMB: 256,
 			},
 		},
 	}
@@ -686,9 +689,9 @@ func TestProvision_SummaryAllNoop(t *testing.T) {
 		{
 			Type: "cache",
 			CacheSpec: &providers.CacheSpec{
-				Name:      "cache1",
-				Engine:    "redis",
-				MemoryMB:  256,
+				Name:     "cache1",
+				Engine:   "redis",
+				MemoryMB: 256,
 			},
 		},
 		{
@@ -731,8 +734,8 @@ func TestProvision_SummaryWithFailedResources(t *testing.T) {
 	prov, _, _ := setupTestProvisioner(t)
 
 	resources := []ResourceResult{
-		{Name: "db1", Action: "create", Success: true},  // created
-		{Name: "db2", Action: "create", Success: false}, // failed
+		{Name: "db1", Action: "create", Success: true},     // created
+		{Name: "db2", Action: "create", Success: false},    // failed
 		{Name: "cache1", Action: "update", Success: false}, // failed
 		{Name: "bucket1", Action: "noop", Success: true},   // skipped
 	}
@@ -791,7 +794,7 @@ func TestProvision_RetryableErrorsUnchanged(t *testing.T) {
 
 	// Create a plan that will fail (invalid spec will cause plan failure - EPROV005)
 	// Actually, let's verify the SDK retryable error behavior through a mock
-	
+
 	// The EPROV005 error from plan failure should remain retryable
 	input := ProvisionInput{
 		EnvID: "env-retry-test",
@@ -849,7 +852,7 @@ func TestCalculateSummary(t *testing.T) {
 			expected: ProvisionSummary{Created: 0, Updated: 0, Skipped: 3, Failed: 0, Total: 3},
 		},
 		{
-			name: "empty",
+			name:      "empty",
 			resources: []ResourceResult{},
 			expected:  ProvisionSummary{Created: 0, Updated: 0, Skipped: 0, Failed: 0, Total: 0},
 		},

@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"os"
 
-	"encore.dev/storage/sqldb"
 	"encore.dev/storage/cache"
+	"encore.dev/storage/sqldb"
 )
 
 // User represents a user in the system
@@ -32,6 +32,7 @@ var sessionCache = cache.NewCluster("session", cache.ClusterConfig{
 })
 
 // GetUser retrieves a user by ID
+//
 //encore:api public path=/users/:id
 func GetUser(ctx context.Context, id int64) (*User, error) {
 	// Try cache first
@@ -58,6 +59,7 @@ func GetUser(ctx context.Context, id int64) (*User, error) {
 }
 
 // CreateUser creates a new user
+//
 //encore:api public method=POST path=/users
 func CreateUser(ctx context.Context, req *User) (*User, error) {
 	row := usersDB.QueryRow(ctx,
@@ -71,6 +73,7 @@ func CreateUser(ctx context.Context, req *User) (*User, error) {
 }
 
 // HealthCheck returns the service health status
+//
 //encore:api public path=/health
 func HealthCheck(ctx context.Context) (*HealthResponse, error) {
 	return &HealthResponse{
@@ -86,6 +89,7 @@ type HealthResponse struct {
 }
 
 // ListUsers returns all users
+//
 //encore:api public path=/users
 func ListUsers(ctx context.Context) (*ListUsersResponse, error) {
 	rows, err := usersDB.Query(ctx, "SELECT id, name, email FROM users LIMIT 100")

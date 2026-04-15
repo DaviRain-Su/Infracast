@@ -199,17 +199,17 @@ func (p *Provider) ensureVPC(ctx context.Context, region string) (string, error)
 	if resp == nil || resp.VpcId == "" {
 		return "", fmt.Errorf("failed to create default VPC: empty VPC ID in response")
 	}
-	
+
 	// Wait for VPC to become Available
 	if err := p.waitForVPCAvailable(resp.VpcId); err != nil {
 		return "", fmt.Errorf("failed to wait for VPC to become available: %w", err)
 	}
-	
+
 	// Save to state store if available
 	if p.envID != "" {
 		p.saveVPCState(ctx, p.envID, resp.VpcId, networkVPCName(region))
 	}
-	
+
 	return resp.VpcId, nil
 }
 
@@ -277,7 +277,7 @@ func (p *Provider) findReusableVPC(region string) (string, bool) {
 
 func (p *Provider) ensureVSwitch(ctx context.Context, vpcID string) (string, error) {
 	vswName := networkVSwitchName(p.region)
-	
+
 	describeReq := vpc.CreateDescribeVSwitchesRequest()
 	describeReq.RegionId = p.region
 	describeReq.VpcId = vpcID
@@ -399,7 +399,7 @@ func (p *Provider) waitForVPCAvailable(vpcID string) error {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	timeout := time.After(2 * time.Minute)
-	
+
 	for {
 		select {
 		case <-timeout:
@@ -408,16 +408,15 @@ func (p *Provider) waitForVPCAvailable(vpcID string) error {
 			req := vpc.CreateDescribeVpcsRequest()
 			req.VpcId = vpcID
 			req.RegionId = p.region
-			
+
 			resp, err := p.vpcClient.DescribeVpcs(req)
 			if err != nil {
 				continue // Retry on error
 			}
-			
+
 			if len(resp.Vpcs.Vpc) > 0 && resp.Vpcs.Vpc[0].Status == "Available" {
 				return nil
 			}
 		}
 	}
 }
-

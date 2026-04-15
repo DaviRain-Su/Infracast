@@ -18,9 +18,9 @@ type Notifier struct {
 
 // Config holds notification configuration
 type Config struct {
-	FeishuWebhook  string
+	FeishuWebhook   string
 	DingTalkWebhook string
-	Enabled        bool
+	Enabled         bool
 }
 
 // NewNotifier creates a new notifier
@@ -28,7 +28,7 @@ func NewNotifier(config *Config) *Notifier {
 	if config == nil {
 		config = &Config{}
 	}
-	
+
 	return &Notifier{
 		config: config,
 		client: &http.Client{
@@ -85,48 +85,48 @@ func (n *Notifier) Notify(ctx context.Context, event *DeploymentEvent) error {
 // sendFeishu sends notification to Feishu webhook
 func (n *Notifier) sendFeishu(ctx context.Context, event *DeploymentEvent) error {
 	message := n.formatFeishuMessage(event)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", n.config.FeishuWebhook, bytes.NewBuffer(message))
 	if err != nil {
 		return err
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := n.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("feishu webhook returned %d", resp.StatusCode)
 	}
-	
+
 	return nil
 }
 
 // sendDingTalk sends notification to DingTalk webhook
 func (n *Notifier) sendDingTalk(ctx context.Context, event *DeploymentEvent) error {
 	message := n.formatDingTalkMessage(event)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", n.config.DingTalkWebhook, bytes.NewBuffer(message))
 	if err != nil {
 		return err
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := n.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("dingtalk webhook returned %d", resp.StatusCode)
 	}
-	
+
 	return nil
 }
 

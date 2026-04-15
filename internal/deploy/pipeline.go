@@ -54,21 +54,21 @@ type PipelineInput struct {
 
 // PipelineResult contains the outcome of pipeline execution
 type PipelineResult struct {
-	Success      bool
-	ExitCode     int
-	Steps        []StepResult
-	Error        error
-	Duration     time.Duration
-	FinalImage   string
+	Success    bool
+	ExitCode   int
+	Steps      []StepResult
+	Error      error
+	Duration   time.Duration
+	FinalImage string
 }
 
 // StepResult represents the outcome of a single step
 type StepResult struct {
-	Name      string
-	Success   bool
-	Duration  time.Duration
-	Error     error
-	Output    string
+	Name     string
+	Success  bool
+	Duration time.Duration
+	Error    error
+	Output   string
 }
 
 // NewPipeline creates a new deployment pipeline
@@ -218,23 +218,23 @@ func (p *Pipeline) Execute(ctx context.Context, input *PipelineInput) *PipelineR
 func (p *Pipeline) executeStep(name string, fn func() error) StepResult {
 	p.logf("Step: %s...", name)
 	start := time.Now()
-	
+
 	err := fn()
 	duration := time.Since(start)
-	
+
 	result := StepResult{
 		Name:     name,
 		Duration: duration,
 		Success:  err == nil,
 		Error:    err,
 	}
-	
+
 	if err != nil {
 		p.logf("  ✗ Failed: %v", err)
 	} else {
 		p.logf("  ✓ Success (%v)", duration)
 	}
-	
+
 	return result
 }
 
@@ -266,25 +266,25 @@ func (p *Pipeline) finalizeResult(result *PipelineResult, start time.Time, exitC
 // stepBuild executes encore build docker
 func (p *Pipeline) stepBuild(ctx context.Context, input *PipelineInput) error {
 	p.log("  Building application...")
-	
+
 	if p.builder == nil {
 		p.builder = NewBuilder()
 	}
-	
+
 	// Execute encore build
 	buildResult, err := p.builder.Build(ctx, input.AppName, input.Commit)
 	if err != nil {
 		return fmt.Errorf("EDEPLOY070: build failed: %w", err)
 	}
-	
+
 	if !buildResult.Success {
 		return fmt.Errorf("EDEPLOY070: build failed: %v", buildResult.Error)
 	}
-	
+
 	// Store build result for later steps
 	input.BuildResult = buildResult
 	input.LocalImage = buildResult.ImageTag
-	
+
 	p.logf("  Built image: %s", buildResult.ImageTag)
 	return nil
 }
@@ -315,12 +315,12 @@ func (p *Pipeline) stepPush(ctx context.Context, input *PipelineInput) error {
 	if len(pushTag) > 32 {
 		pushTag = pushTag[:32]
 	}
-	
+
 	finalImage, err := p.acrClient.PushImage(ctx, localImage, pushTag)
 	if err != nil {
 		return err
 	}
-	
+
 	input.ImageTag = finalImage
 	p.logf("  Pushed image: %s", finalImage)
 	return nil
@@ -329,16 +329,16 @@ func (p *Pipeline) stepPush(ctx context.Context, input *PipelineInput) error {
 // stepProvision provisions infrastructure via direct provider methods
 func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) error {
 	p.log("  Provisioning infrastructure...")
-	
+
 	// Check required inputs
 	if input.BuildResult == nil {
 		return fmt.Errorf("EDEPLOY071: build result required for provision")
 	}
-	
+
 	if input.AliAccessKey == "" || input.AliSecretKey == "" {
 		return fmt.Errorf("EDEPLOY073: AliCloud credentials required")
 	}
-	
+
 	// Create provider instance
 	provider, err := alicloud.NewProvider(input.ACRRegion, input.AliAccessKey, input.AliSecretKey)
 	if err != nil {
@@ -348,17 +348,17 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 	if p.provisionStore != nil {
 		provider.SetStateStore(p.provisionStore)
 	}
-	
+
 	// Map build metadata to resource specs
 	meta := input.BuildResult.BuildMeta
 	mapperInstance := mapper.NewMapper(nil)
 	specs := mapperInstance.MapToResourceSpecs(meta)
-	
+
 	// Directly provision each resource (bypass Plan/Apply stubs)
 	input.ResourceOutputs = make([]infragen.ResourceOutput, 0, len(specs))
 	for _, spec := range specs {
 		var output infragen.ResourceOutput
-		
+
 		switch spec.Type {
 		case "database":
 			if spec.DatabaseSpec == nil {
@@ -380,7 +380,7 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 					"password": dbOutput.Password,
 				},
 			}
-			
+
 		case "cache":
 			if spec.CacheSpec == nil {
 				continue
@@ -399,7 +399,7 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 					"password": cacheOutput.Password,
 				},
 			}
-			
+
 		case "object_storage":
 			if spec.ObjectStorageSpec == nil {
 				continue
@@ -417,15 +417,15 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 					"region":   ossOutput.Region,
 				},
 			}
-			
+
 		default:
 			p.logf("  Unknown resource type: %s", spec.Type)
 			continue
 		}
-		
+
 		input.ResourceOutputs = append(input.ResourceOutputs, output)
 	}
-	
+
 	p.logf("  Provisioned %d resources", len(input.ResourceOutputs))
 	return nil
 }
@@ -433,10 +433,10 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 // stepGenerateConfig generates infracfg.json
 func (p *Pipeline) stepGenerateConfig(ctx context.Context, input *PipelineInput) error {
 	p.log("  Generating infracfg.json...")
-	
+
 	// Create config generator
 	generator := infragen.NewGenerator()
-	
+
 	// Generate configuration from resource outputs
 	// TODO: Get BuildMeta from build step
 	meta := mapper.BuildMeta{AppName: input.AppName}
@@ -444,17 +444,17 @@ func (p *Pipeline) stepGenerateConfig(ctx context.Context, input *PipelineInput)
 	if err != nil {
 		return fmt.Errorf("EIGEN001: failed to generate config: %w", err)
 	}
-	
+
 	// Write configuration to file
 	configPath := input.ConfigPath
 	if configPath == "" {
 		configPath = "infracfg.json"
 	}
-	
+
 	if err := generator.Write(cfg, configPath); err != nil {
 		return fmt.Errorf("EIGEN003: failed to write config: %w", err)
 	}
-	
+
 	p.log("  Generated: " + configPath)
 	return nil
 }
@@ -464,9 +464,9 @@ func (p *Pipeline) stepDeploy(ctx context.Context, input *PipelineInput) error {
 	if err := p.initK8sRuntime(input); err != nil {
 		return err
 	}
-	
+
 	p.log("  Generating K8s manifests...")
-	
+
 	// Create deploy config
 	deployCfg := &DeployConfig{
 		AppName:    input.AppName,
@@ -478,20 +478,20 @@ func (p *Pipeline) stepDeploy(ctx context.Context, input *PipelineInput) error {
 		EnvVars:    input.EnvVars,
 		ConfigPath: input.ConfigPath,
 	}
-	
+
 	// Generate manifests
 	resources, err := p.k8sClient.GenerateManifests(deployCfg, nil)
 	if err != nil {
 		return fmt.Errorf("EDEPLOY012: failed to generate manifests: %w", err)
 	}
-	
+
 	p.log("  Applying manifests to cluster...")
-	
+
 	// Apply manifests
 	if err := p.k8sClient.Apply(ctx, resources); err != nil {
 		return fmt.Errorf("EDEPLOY014: failed to apply manifests: %w", err)
 	}
-	
+
 	p.log("  Deployment applied successfully")
 	return nil
 }
@@ -501,22 +501,22 @@ func (p *Pipeline) stepVerify(ctx context.Context, input *PipelineInput) error {
 	if err := p.initK8sRuntime(input); err != nil {
 		return err
 	}
-	
+
 	p.log("  Verifying deployment health...")
-	
+
 	// Check deployment status with 5 minute timeout
 	timeout := 5 * time.Minute
 	if err := p.healthChecker.CheckStatus(ctx, input.AppName, timeout); err != nil {
 		return fmt.Errorf("EDEPLOY050: health verification failed: %w", err)
 	}
-	
+
 	// Additional health check via HTTP endpoint
 	if input.Port > 0 {
 		if err := p.healthChecker.VerifyHealth(ctx, input.AppName, input.Port); err != nil {
 			return fmt.Errorf("EDEPLOY057: application health check failed: %w", err)
 		}
 	}
-	
+
 	p.log("  Health verification passed")
 	return nil
 }
@@ -526,7 +526,7 @@ func (p *Pipeline) stepRollback(ctx context.Context, input *PipelineInput) error
 	if err := p.initK8sRuntime(input); err != nil {
 		return err
 	}
-	
+
 	p.log("  Rolling back deployment...")
 	return p.rollbackManager.Rollback(ctx, input.AppName, RollbackStrategyK8s)
 }

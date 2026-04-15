@@ -33,6 +33,7 @@ type Asset struct {
 }
 
 // HomePage renders the home page
+//
 //encore:api public path=/
 func HomePage(ctx context.Context) (*HTMLResponse, error) {
 	html := `
@@ -68,6 +69,7 @@ func (r *HTMLResponse) MarshalJSON() ([]byte, error) {
 }
 
 // UploadAsset handles file uploads to object storage
+//
 //encore:api public method=POST path=/upload
 func UploadAsset(ctx context.Context, req *UploadRequest) (*UploadResponse, error) {
 	// Upload to object storage
@@ -97,6 +99,7 @@ type UploadResponse struct {
 }
 
 // ListAssets returns all assets in the bucket
+//
 //encore:api public path=/assets
 func ListAssets(ctx context.Context) (*ListAssetsResponse, error) {
 	// List objects in bucket
@@ -123,6 +126,7 @@ type ListAssetsResponse struct {
 }
 
 // HealthCheck returns the service health status
+//
 //encore:api public path=/health
 func HealthCheck(ctx context.Context) (*HealthResponse, error) {
 	return &HealthResponse{

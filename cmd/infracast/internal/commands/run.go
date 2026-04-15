@@ -16,8 +16,8 @@ import (
 
 // Default ports for local development
 const (
-	DefaultLocalPort    = 8080
-	DefaultLocalDBPort  = 5432
+	DefaultLocalPort      = 8080
+	DefaultLocalDBPort    = 5432
 	DefaultLocalRedisPort = 6379
 	DefaultLocalMinioPort = 9000
 )
@@ -25,11 +25,11 @@ const (
 // newRunCommand creates the run command for local development
 func newRunCommand() *cobra.Command {
 	var (
-		workingDir  string
-		configPath  string
-		skipGen     bool
-		port        int
-		devMode     bool
+		workingDir string
+		configPath string
+		skipGen    bool
+		port       int
+		devMode    bool
 	)
 
 	cmd := &cobra.Command{
@@ -79,14 +79,14 @@ Examples:
 
 // RunInput contains input parameters for run command
 type RunInput struct {
-	WorkingDir  string
-	ConfigPath  string
-	SkipGen     bool
-	Port        int
-	DevMode     bool
-	DBPort      int
-	RedisPort   int
-	MinioPort   int
+	WorkingDir string
+	ConfigPath string
+	SkipGen    bool
+	Port       int
+	DevMode    bool
+	DBPort     int
+	RedisPort  int
+	MinioPort  int
 }
 
 // RunResult contains the result of run command execution
@@ -99,14 +99,14 @@ type RunResult struct {
 
 // LocalConfig represents the local infrastructure configuration
 type LocalConfig struct {
-	Version      string                 `json:"version"`
-	AppName      string                 `json:"app_name"`
-	Environment  string                 `json:"environment"`
-	LocalMode    bool                   `json:"local_mode"`
+	Version      string                   `json:"version"`
+	AppName      string                   `json:"app_name"`
+	Environment  string                   `json:"environment"`
+	LocalMode    bool                     `json:"local_mode"`
 	Services     map[string]ServiceConfig `json:"services"`
-	Databases    map[string]DBConfig    `json:"databases"`
-	Caches       map[string]CacheConfig `json:"caches,omitempty"`
-	ObjectStores map[string]OSSConfig   `json:"object_stores,omitempty"`
+	Databases    map[string]DBConfig      `json:"databases"`
+	Caches       map[string]CacheConfig   `json:"caches,omitempty"`
+	ObjectStores map[string]OSSConfig     `json:"object_stores,omitempty"`
 }
 
 // ServiceConfig represents a service configuration

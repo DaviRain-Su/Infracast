@@ -10,12 +10,13 @@ import (
 
 // Response represents a simple response
 type Response struct {
-	Message   string `json:"message"`
-	Version   string `json:"version"`
-	Env       string `json:"env"`
+	Message string `json:"message"`
+	Version string `json:"version"`
+	Env     string `json:"env"`
 }
 
 // Hello returns a greeting message
+//
 //encore:api public path=/hello
 func Hello(ctx context.Context) (*Response, error) {
 	return &Response{
@@ -26,6 +27,7 @@ func Hello(ctx context.Context) (*Response, error) {
 }
 
 // HealthCheck returns the service health status
+//
 //encore:api public path=/health
 func HealthCheck(ctx context.Context) (*HealthResponse, error) {
 	return &HealthResponse{

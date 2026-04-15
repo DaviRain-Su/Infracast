@@ -32,6 +32,7 @@ type RegisterResponse struct {
 }
 
 // Register creates a new user
+//
 //encore:api public method=POST path=/user.register
 func Register(ctx context.Context, params *RegisterParams) (*RegisterResponse, error) {
 	if params.Email == "" || params.Password == "" {
@@ -71,6 +72,7 @@ type LoginResponse struct {
 }
 
 // Login authenticates a user
+//
 //encore:api public method=POST path=/user.login
 func Login(ctx context.Context, params *LoginParams) (*LoginResponse, error) {
 	if params.Email == "" || params.Password == "" {
@@ -101,6 +103,7 @@ func Login(ctx context.Context, params *LoginParams) (*LoginResponse, error) {
 }
 
 // Profile returns the current user's profile
+//
 //encore:api auth method=GET path=/user.profile
 func Profile(ctx context.Context) (*User, error) {
 	userID, _ := auth.UserID()

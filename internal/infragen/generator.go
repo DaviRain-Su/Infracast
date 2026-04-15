@@ -18,22 +18,22 @@ const (
 
 // InfraCfg represents the infrastructure configuration structure
 type InfraCfg struct {
-	Version       string                   `json:"version"`
-	AppName       string                   `json:"app_name"`
-	Environment   string                   `json:"environment"`
-	SQLServers    map[string]SQLServer     `json:"sql_servers,omitempty"`
-	Redis         map[string]RedisServer   `json:"redis,omitempty"`
-	ObjectStorage map[string]ObjectStore   `json:"object_storage,omitempty"`
+	Version       string                 `json:"version"`
+	AppName       string                 `json:"app_name"`
+	Environment   string                 `json:"environment"`
+	SQLServers    map[string]SQLServer   `json:"sql_servers,omitempty"`
+	Redis         map[string]RedisServer `json:"redis,omitempty"`
+	ObjectStorage map[string]ObjectStore `json:"object_storage,omitempty"`
 }
 
 // SQLServer represents a SQL database server configuration
 type SQLServer struct {
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Database string `json:"database"`
-	User     string `json:"user"`
-	Password string `json:"password,omitempty"`
+	Name     string     `json:"name"`
+	Host     string     `json:"host"`
+	Port     int        `json:"port"`
+	Database string     `json:"database"`
+	User     string     `json:"user"`
+	Password string     `json:"password,omitempty"`
 	TLS      *TLSConfig `json:"tls,omitempty"`
 }
 
@@ -84,11 +84,11 @@ func NewGenerator() *Generator {
 // Generate creates an InfraCfg from resource outputs and build metadata
 func (g *Generator) Generate(outputs []ResourceOutput, meta mapper.BuildMeta, env string) (*InfraCfg, error) {
 	cfg := &InfraCfg{
-		Version:     g.version,
-		AppName:     meta.AppName,
-		Environment: env,
-		SQLServers:  make(map[string]SQLServer),
-		Redis:       make(map[string]RedisServer),
+		Version:       g.version,
+		AppName:       meta.AppName,
+		Environment:   env,
+		SQLServers:    make(map[string]SQLServer),
+		Redis:         make(map[string]RedisServer),
 		ObjectStorage: make(map[string]ObjectStore),
 	}
 
@@ -167,11 +167,11 @@ func (g *Generator) Merge(base, override *InfraCfg) *InfraCfg {
 	}
 
 	result := &InfraCfg{
-		Version:     override.Version,
-		AppName:     override.AppName,
-		Environment: override.Environment,
-		SQLServers:  g.mergeSQLServers(base.SQLServers, override.SQLServers),
-		Redis:       g.mergeRedis(base.Redis, override.Redis),
+		Version:       override.Version,
+		AppName:       override.AppName,
+		Environment:   override.Environment,
+		SQLServers:    g.mergeSQLServers(base.SQLServers, override.SQLServers),
+		Redis:         g.mergeRedis(base.Redis, override.Redis),
 		ObjectStorage: g.mergeObjectStorage(base.ObjectStorage, override.ObjectStorage),
 	}
 

@@ -14,9 +14,9 @@ import (
 // newInitCommand creates the init command with interactive UX
 func newInitCommand() *cobra.Command {
 	var (
-		provider string
-		region   string
-		appName  string
+		provider       string
+		region         string
+		appName        string
 		nonInteractive bool
 	)
 

@@ -193,12 +193,12 @@ func (s *AuditStore) LogOperation(ctx context.Context, action string, duration t
 
 // QueryOptions contains query filters
 type QueryOptions struct {
-	Env       string
-	Action    string
-	Limit     int
-	Since     time.Time
-	Level     AuditLevel
-	TraceID   string
+	Env     string
+	Action  string
+	Limit   int
+	Since   time.Time
+	Level   AuditLevel
+	TraceID string
 }
 
 // Query retrieves audit events matching the options

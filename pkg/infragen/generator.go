@@ -70,9 +70,9 @@ func (g *Generator) Generate(results []provisioner.ResourceResult, meta mapper.B
 		if result, exists := resultMap[key]; exists {
 			if cacheOutput, ok := result.Output.(*providers.CacheOutput); ok {
 				cfg.Redis[cacheName] = RedisServer{
-					Host:      cacheOutput.Endpoint,
-					Port:      cacheOutput.Port,
-					Password:  cacheOutput.Password,
+					Host:     cacheOutput.Endpoint,
+					Port:     cacheOutput.Port,
+					Password: cacheOutput.Password,
 					Auth: &AuthConfig{
 						Enabled: true,
 					},

@@ -22,9 +22,9 @@ import (
 
 // K8sClient wraps Kubernetes operations for ACK
 type K8sClient struct {
-	namespace  string
-	config     *K8sConfig
-	clientset  kubernetes.Interface
+	namespace string
+	config    *K8sConfig
+	clientset kubernetes.Interface
 }
 
 // K8sConfig holds Kubernetes client configuration

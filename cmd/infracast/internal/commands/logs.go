@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/spf13/cobra"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/spf13/cobra"
 
 	"github.com/DaviRain-Su/infracast/internal/state"
 )

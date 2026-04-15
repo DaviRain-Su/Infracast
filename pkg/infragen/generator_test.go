@@ -452,7 +452,6 @@ func TestInfraConfig_StructFields(t *testing.T) {
 	assert.Equal(t, "${ACCESS_KEY_SECRET}", store.SecretKey)
 }
 
-
 // TestGenerator_FromProvisionResults validates generation from ResourceResult (B1-R3)
 func TestGenerator_FromProvisionResults(t *testing.T) {
 	g := NewGenerator(nil)

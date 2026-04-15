@@ -14,13 +14,13 @@ import (
 
 func main() {
 	var (
-		region    = flag.String("region", "cn-hangzhou", "AliCloud region")
-		prefix    = flag.String("prefix", "", "Resource name prefix (default: infracast-<env>)")
-		envID     = flag.String("env", "", "Environment ID (required)")
-		dryRun    = flag.Bool("dry-run", true, "Show what would be deleted without actually deleting")
-		apply     = flag.Bool("apply", false, "Actually perform deletion (required for real deletion)")
-		keepVPC   = flag.Int("keep-vpc", 1, "Number of VPCs to keep for reuse")
-		force     = flag.Bool("force", false, "Allow broad prefix deletion")
+		region  = flag.String("region", "cn-hangzhou", "AliCloud region")
+		prefix  = flag.String("prefix", "", "Resource name prefix (default: infracast-<env>)")
+		envID   = flag.String("env", "", "Environment ID (required)")
+		dryRun  = flag.Bool("dry-run", true, "Show what would be deleted without actually deleting")
+		apply   = flag.Bool("apply", false, "Actually perform deletion (required for real deletion)")
+		keepVPC = flag.Int("keep-vpc", 1, "Number of VPCs to keep for reuse")
+		force   = flag.Bool("force", false, "Allow broad prefix deletion")
 	)
 	flag.Parse()
 

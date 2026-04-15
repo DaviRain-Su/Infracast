@@ -136,13 +136,13 @@ func TestStore_UpsertResource_Concurrent(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func(id int) {
 			res := &InfraResource{
-				EnvID:         "env-123",
-				ResourceName:  "mydb",
-				ResourceType:  "database",
-				SpecHash:    "new-hash",
-				ConfigJSON:    `{"engine":"mysql","version":"8.0"}`,
-				Status:        "updating",
-				StateVersion:  1, // Both start from version 1
+				EnvID:        "env-123",
+				ResourceName: "mydb",
+				ResourceType: "database",
+				SpecHash:     "new-hash",
+				ConfigJSON:   `{"engine":"mysql","version":"8.0"}`,
+				Status:       "updating",
+				StateVersion: 1, // Both start from version 1
 			}
 			err := store.UpsertResource(ctx, res)
 			if err == nil {
@@ -245,7 +245,7 @@ func TestStore_EnvironmentIsolation(t *testing.T) {
 		EnvID:        "env-prod",
 		ResourceName: "mydb",
 		ResourceType: "database",
-		SpecHash:   "hash-prod",
+		SpecHash:     "hash-prod",
 		ConfigJSON:   `{"engine":"mysql","version":"8.0"}`,
 		Status:       "provisioned",
 	}
@@ -253,7 +253,7 @@ func TestStore_EnvironmentIsolation(t *testing.T) {
 		EnvID:        "env-staging",
 		ResourceName: "mydb",
 		ResourceType: "database",
-		SpecHash:   "hash-staging",
+		SpecHash:     "hash-staging",
 		ConfigJSON:   `{"engine":"mysql","version":"5.7"}`,
 		Status:       "provisioned",
 	}

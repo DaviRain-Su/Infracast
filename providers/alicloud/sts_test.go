@@ -11,7 +11,7 @@ import (
 func TestNewSTSClient(t *testing.T) {
 	// Skip if no real credentials
 	t.Skip("Skipping STS client test - requires real AliCloud credentials")
-	
+
 	client, err := NewSTSClient("cn-hangzhou", "test-ak", "test-sk")
 	assert.NoError(t, err)
 	assert.NotNil(t, client)
@@ -26,11 +26,11 @@ func TestTemporaryCredentials_IsExpired(t *testing.T) {
 		Expiration:      time.Now().Add(1 * time.Hour),
 	}
 	assert.False(t, creds.IsExpired())
-	
+
 	// Expired (expired 10 minutes ago)
 	creds.Expiration = time.Now().Add(-10 * time.Minute)
 	assert.True(t, creds.IsExpired())
-	
+
 	// Near expiration (expires in 3 minutes - within 5 min buffer)
 	creds.Expiration = time.Now().Add(3 * time.Minute)
 	assert.True(t, creds.IsExpired())
@@ -45,7 +45,7 @@ func TestTemporaryCredentials_IsExpired_ExactlyAtBuffer(t *testing.T) {
 		Expiration:      time.Now().Add(5 * time.Minute),
 	}
 	assert.True(t, creds.IsExpired())
-	
+
 	// 6 minutes before - not expired
 	creds.Expiration = time.Now().Add(6 * time.Minute)
 	assert.False(t, creds.IsExpired())
@@ -61,7 +61,7 @@ func TestAssumeRole(t *testing.T) {
 func TestRefreshableCredentials(t *testing.T) {
 	// This test uses a mock that would need real implementation
 	// For now, just validate the struct initialization
-	
+
 	// Note: In real tests, we'd mock the STSClient
 	t.Skip("Skipping RefreshableCredentials test - requires STS client mock")
 }

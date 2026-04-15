@@ -241,9 +241,9 @@ func (r *RollbackManager) validateRollbackSafety(ctx context.Context, deployment
 	// Check 3: Verify deployment is in a state that allows rollback
 	// Don't rollback if a rollout is already in progress
 	for _, cond := range deployment.Status.Conditions {
-		if cond.Type == appsv1.DeploymentProgressing && 
-		   cond.Status == "True" && 
-		   cond.Reason == "NewReplicaSetAvailable" {
+		if cond.Type == appsv1.DeploymentProgressing &&
+			cond.Status == "True" &&
+			cond.Reason == "NewReplicaSetAvailable" {
 			// Rollout is complete, safe to rollback
 			break
 		}

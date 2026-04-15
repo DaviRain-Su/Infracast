@@ -24,10 +24,10 @@ type Environment struct {
 
 // Overrides represents resource-specific overrides
 type Overrides struct {
-	Databases     map[string]DatabaseOverride     `yaml:"databases,omitempty"`
-	Cache         map[string]CacheOverride        `yaml:"cache,omitempty"`
+	Databases     map[string]DatabaseOverride      `yaml:"databases,omitempty"`
+	Cache         map[string]CacheOverride         `yaml:"cache,omitempty"`
 	ObjectStorage map[string]ObjectStorageOverride `yaml:"object_storage,omitempty"`
-	Compute       map[string]ComputeOverride      `yaml:"compute,omitempty"`
+	Compute       map[string]ComputeOverride       `yaml:"compute,omitempty"`
 }
 
 // DatabaseOverride represents database configuration overrides

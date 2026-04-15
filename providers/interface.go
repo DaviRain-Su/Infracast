@@ -38,21 +38,21 @@ type Region struct {
 
 // ResourceSpec is a union type for all resource specifications
 type ResourceSpec struct {
-	Type            string                `json:"type"`
-	DatabaseSpec    *DatabaseSpec         `json:"database_spec,omitempty"`
-	CacheSpec       *CacheSpec            `json:"cache_spec,omitempty"`
-	ObjectStorageSpec *ObjectStorageSpec  `json:"object_storage_spec,omitempty"`
-	ComputeSpec     *ComputeSpec          `json:"compute_spec,omitempty"`
+	Type              string             `json:"type"`
+	DatabaseSpec      *DatabaseSpec      `json:"database_spec,omitempty"`
+	CacheSpec         *CacheSpec         `json:"cache_spec,omitempty"`
+	ObjectStorageSpec *ObjectStorageSpec `json:"object_storage_spec,omitempty"`
+	ComputeSpec       *ComputeSpec       `json:"compute_spec,omitempty"`
 }
 
 // DatabaseSpec represents database resource specification
 type DatabaseSpec struct {
-	Name          string   `json:"name"`
-	Engine        string   `json:"engine"` // mysql, postgresql
-	Version       string   `json:"version"`
-	InstanceClass string   `json:"instance_class"`
-	StorageGB     int      `json:"storage_gb"`
-	HighAvail     *bool    `json:"high_avail,omitempty"`
+	Name          string `json:"name"`
+	Engine        string `json:"engine"` // mysql, postgresql
+	Version       string `json:"version"`
+	InstanceClass string `json:"instance_class"`
+	StorageGB     int    `json:"storage_gb"`
+	HighAvail     *bool  `json:"high_avail,omitempty"`
 }
 
 // DatabaseOutput represents the created database resource
@@ -116,9 +116,9 @@ type ComputeSpec struct {
 
 // ComputeOutput represents the created compute resource
 type ComputeOutput struct {
-	ResourceID    string `json:"resource_id"`
-	Namespace     string `json:"namespace"`
-	ServiceName   string `json:"service_name"`
+	ResourceID     string `json:"resource_id"`
+	Namespace      string `json:"namespace"`
+	ServiceName    string `json:"service_name"`
 	DeploymentName string `json:"deployment_name"`
 }
 

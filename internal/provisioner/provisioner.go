@@ -36,12 +36,12 @@ const (
 
 // ProvisionInput represents the input to the Provision operation
 type ProvisionInput struct {
-	EnvID       string                    `json:"env_id"`
-	BuildMeta   mapper.BuildMeta          `json:"build_meta"`
-	Resources   []providers.ResourceSpec  `json:"resources,omitempty"` // Explicit resource specs (optional)
-	Provider    providers.CloudProviderInterface `json:"-"` // Provider implementation
-	DryRun      bool                      `json:"dry_run"`
-	Credentials credentials.CredentialConfig `json:"credentials"`
+	EnvID       string                           `json:"env_id"`
+	BuildMeta   mapper.BuildMeta                 `json:"build_meta"`
+	Resources   []providers.ResourceSpec         `json:"resources,omitempty"` // Explicit resource specs (optional)
+	Provider    providers.CloudProviderInterface `json:"-"`                   // Provider implementation
+	DryRun      bool                             `json:"dry_run"`
+	Credentials credentials.CredentialConfig     `json:"credentials"`
 }
 
 // ProvisionSummary provides aggregated counts of provisioning operations
@@ -92,12 +92,12 @@ type PlanResult struct {
 
 // ResourcePlan represents a planned operation for a single resource
 type ResourcePlan struct {
-	Action   string                `json:"action"` // create, update, delete, noop
-	Spec     providers.ResourceSpec `json:"spec"`
-	OldHash  string                `json:"old_hash,omitempty"`
-	NewHash  string                `json:"new_hash,omitempty"`
-	Priority int                   `json:"priority"`
-	DependsOn []string             `json:"depends_on,omitempty"`
+	Action    string                 `json:"action"` // create, update, delete, noop
+	Spec      providers.ResourceSpec `json:"spec"`
+	OldHash   string                 `json:"old_hash,omitempty"`
+	NewHash   string                 `json:"new_hash,omitempty"`
+	Priority  int                    `json:"priority"`
+	DependsOn []string               `json:"depends_on,omitempty"`
 }
 
 // ApplyResult represents the result of applying a plan
@@ -108,12 +108,12 @@ type ApplyResult struct {
 
 // ResourceResult represents the result of applying a resource plan
 type ResourceResult struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Action    string `json:"action"`
-	Success   bool   `json:"success"`
-	ErrorMsg  string `json:"error_msg,omitempty"`
-	Output    interface{} `json:"output,omitempty"`
+	Name     string      `json:"name"`
+	Type     string      `json:"type"`
+	Action   string      `json:"action"`
+	Success  bool        `json:"success"`
+	ErrorMsg string      `json:"error_msg,omitempty"`
+	Output   interface{} `json:"output,omitempty"`
 }
 
 // Provision is the high-level entry point for provisioning
@@ -257,9 +257,9 @@ func (p *Provisioner) planResource(ctx context.Context, envID string, spec provi
 	}
 
 	plan := ResourcePlan{
-		Spec:     spec,
-		NewHash:  specHash,
-		Priority: p.calculatePriority(spec.Type),
+		Spec:      spec,
+		NewHash:   specHash,
+		Priority:  p.calculatePriority(spec.Type),
 		DependsOn: p.calculateDependencies(spec),
 	}
 
