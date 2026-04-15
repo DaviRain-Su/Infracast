@@ -128,7 +128,7 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	request.PayType = "Postpaid" // Pay-as-you-go
 
 	// Set High Availability category
-	if spec.HighAvail {
+	if spec.HighAvail != nil && *spec.HighAvail {
 		request.Category = "HighAvailability"
 	} else {
 		request.Category = "Basic"

@@ -36,7 +36,7 @@ type DatabaseOverride struct {
 	Version       string `yaml:"version,omitempty"`
 	InstanceClass string `yaml:"instance_class,omitempty"`
 	StorageGB     int    `yaml:"storage_gb,omitempty"`
-	HighAvail     bool   `yaml:"high_avail,omitempty"`
+	HighAvail     *bool  `yaml:"high_avail,omitempty"`
 }
 
 // ComputeOverride represents compute configuration overrides

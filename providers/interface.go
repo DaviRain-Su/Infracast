@@ -52,7 +52,7 @@ type DatabaseSpec struct {
 	Version       string   `json:"version"`
 	InstanceClass string   `json:"instance_class"`
 	StorageGB     int      `json:"storage_gb"`
-	HighAvail     bool     `json:"high_avail"`
+	HighAvail     *bool    `json:"high_avail,omitempty"`
 }
 
 // DatabaseOutput represents the created database resource
