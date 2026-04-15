@@ -28,7 +28,34 @@ type DestroyResult struct {
 	Duration time.Duration
 }
 
-// DestroyEnvironment destroys all resources for an environment
+// Destroy destroys a single resource by its provider resource ID
+// This implements CloudProviderInterface.Destroy
+func (p *Provider) Destroy(ctx context.Context, resourceID string) error {
+	// Parse resource type from resourceID (format: "TYPE:ID")
+	parts := strings.SplitN(resourceID, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid resource ID format: %s", resourceID)
+	}
+	resType := parts[0]
+	resID := parts[1]
+
+	switch resType {
+	case "RDS":
+		return p.destroySingleRDS(ctx, resID)
+	case "Redis":
+		return p.destroySingleRedis(ctx, resID)
+	case "OSS":
+		return p.destroySingleOSS(ctx, resID)
+	case "VSwitch":
+		return p.deleteVSwitchWithRetry(ctx, resID)
+	case "VPC":
+		return p.deleteVPCWithRetry(ctx, resID)
+	default:
+		return fmt.Errorf("unknown resource type: %s", resType)
+	}
+}
+
+// DestroyEnvironment destroys all resources for an environment (bulk operation)
 func (p *Provider) DestroyEnvironment(ctx context.Context, envID string, opts DestroyOptions) (*DestroyResult, error) {
 	start := time.Now()
 	result := &DestroyResult{
@@ -57,10 +84,7 @@ func (p *Provider) DestroyEnvironment(ctx context.Context, envID string, opts De
 		fmt.Printf("[Destroy] OSS cleanup error: %v\n", err)
 	}
 
-	// Phase 2: Delete network resources (wait for compute to release)
-	fmt.Printf("[Destroy] Waiting for compute resources to release network interfaces...\n")
-	time.Sleep(10 * time.Second)
-
+	// Phase 2: Delete network resources
 	if err := p.destroyVSwitches(ctx, prefix, opts.DryRun, result); err != nil {
 		fmt.Printf("[Destroy] VSwitch cleanup error: %v\n", err)
 	}
@@ -76,69 +100,183 @@ func (p *Provider) DestroyEnvironment(ctx context.Context, envID string, opts De
 	return result, nil
 }
 
-// destroyRDS deletes RDS instances
-func (p *Provider) destroyRDS(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
-	fmt.Printf("[Destroy] Scanning RDS instances with prefix=%s\n", prefix)
-
+// destroySingleRDS destroys a single RDS instance by ID
+func (p *Provider) destroySingleRDS(ctx context.Context, instanceID string) error {
+	// Check if exists
 	req := rds.CreateDescribeDBInstancesRequest()
 	req.RegionId = p.region
-	req.PageSize = requests.NewInteger(100)
+	req.DBInstanceId = instanceID
 
 	resp, err := p.rdsClient.DescribeDBInstances(req)
 	if err != nil {
-		return fmt.Errorf("list RDS: %w", err)
+		if strings.Contains(err.Error(), "InvalidDBInstanceId.NotFound") {
+			return nil // Already deleted, idempotent
+		}
+		return err
+	}
+	if len(resp.Items.DBInstance) == 0 {
+		return nil // Already deleted
 	}
 
-	for _, inst := range resp.Items.DBInstance {
-		if !strings.Contains(inst.DBInstanceId, prefix) && !strings.Contains(inst.DBInstanceDescription, prefix) {
-			continue
+	inst := resp.Items.DBInstance[0]
+	if inst.DBInstanceStatus == "Deleting" || inst.DBInstanceStatus == "Deleted" {
+		return p.waitForRDSDeleted(ctx, instanceID)
+	}
+
+	// Delete
+	delReq := rds.CreateDeleteDBInstanceRequest()
+	delReq.DBInstanceId = instanceID
+	delReq.RegionId = p.region
+
+	if _, err := p.rdsClient.DeleteDBInstance(delReq); err != nil {
+		if strings.Contains(err.Error(), "InvalidDBInstanceId.NotFound") {
+			return nil // Idempotent
+		}
+		return err
+	}
+
+	return p.waitForRDSDeleted(ctx, instanceID)
+}
+
+// destroySingleRedis destroys a single Redis instance by ID
+func (p *Provider) destroySingleRedis(ctx context.Context, instanceID string) error {
+	// Check if exists
+	req := r_kvstore.CreateDescribeInstancesRequest()
+	req.RegionId = p.region
+
+	resp, err := p.kvstoreClient.DescribeInstances(req)
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for _, inst := range resp.Instances.KVStoreInstance {
+		if inst.InstanceId == instanceID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil // Already deleted, idempotent
+	}
+
+	// Delete
+	delReq := r_kvstore.CreateDeleteInstanceRequest()
+	delReq.InstanceId = instanceID
+
+	if _, err := p.kvstoreClient.DeleteInstance(delReq); err != nil {
+		if strings.Contains(err.Error(), "InvalidInstanceId.NotFound") {
+			return nil // Idempotent
+		}
+		return err
+	}
+
+	return p.waitForRedisDeleted(ctx, instanceID)
+}
+
+// destroySingleOSS destroys a single OSS bucket by name
+func (p *Provider) destroySingleOSS(ctx context.Context, bucketName string) error {
+	// Check if exists
+	exists, err := p.ossClient.IsBucketExist(bucketName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil // Already deleted, idempotent
+	}
+
+	// Get bucket client and delete all objects
+	bucketClient, err := p.ossClient.Bucket(bucketName)
+	if err != nil {
+		return err
+	}
+
+	// Delete all objects (batch delete for efficiency)
+	marker := ""
+	for {
+		objects, err := bucketClient.ListObjects(oss.Marker(marker), oss.MaxKeys(1000))
+		if err != nil {
+			return err
 		}
 
-		resourceID := fmt.Sprintf("RDS:%s", inst.DBInstanceId)
-		fmt.Printf("[Destroy] Found RDS instance: %s (status=%s)\n", inst.DBInstanceId, inst.DBInstanceStatus)
-
-		if dryRun {
-			fmt.Printf("[Destroy] [DRY-RUN] Would delete RDS: %s\n", inst.DBInstanceId)
-			result.Skipped = append(result.Skipped, resourceID)
-			continue
-		}
-
-		// Check if already being deleted
-		if inst.DBInstanceStatus == "Deleting" {
-			fmt.Printf("[Destroy] RDS %s is already being deleted, waiting...\n", inst.DBInstanceId)
-			if err := p.waitForRDSDeleted(ctx, inst.DBInstanceId); err != nil {
-				fmt.Printf("[Destroy] Failed to wait for RDS %s deletion: %v\n", inst.DBInstanceId, err)
-				result.Failed = append(result.Failed, resourceID)
-			} else {
-				result.Deleted = append(result.Deleted, resourceID)
+		if len(objects.Objects) > 0 {
+			// Prepare keys for batch delete
+			keys := make([]string, 0, len(objects.Objects))
+			for _, obj := range objects.Objects {
+				keys = append(keys, obj.Key)
 			}
-			continue
+			// Batch delete
+			if _, err := bucketClient.DeleteObjects(keys, oss.DeleteObjectsQuiet(true)); err != nil {
+				// Fallback to individual delete on batch failure
+				for _, obj := range objects.Objects {
+					bucketClient.DeleteObject(obj.Key)
+				}
+			}
 		}
 
-		// Delete the instance
-		delReq := rds.CreateDeleteDBInstanceRequest()
-		delReq.DBInstanceId = inst.DBInstanceId
-		delReq.RegionId = p.region
+		if !objects.IsTruncated {
+			break
+		}
+		marker = objects.NextMarker
+	}
 
-		if _, err := p.rdsClient.DeleteDBInstance(delReq); err != nil {
-			// Check if already deleted (idempotent)
-			if strings.Contains(err.Error(), "InvalidDBInstanceId.NotFound") {
-				fmt.Printf("[Destroy] RDS %s already deleted (idempotent)\n", inst.DBInstanceId)
-				result.Deleted = append(result.Deleted, resourceID)
+	// Delete bucket
+	if err := p.ossClient.DeleteBucket(bucketName); err != nil {
+		if strings.Contains(err.Error(), "NoSuchBucket") {
+			return nil // Idempotent
+		}
+		return err
+	}
+
+	return nil
+}
+
+// destroyRDS deletes RDS instances matching prefix (using Description/Name, not ID)
+func (p *Provider) destroyRDS(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
+	fmt.Printf("[Destroy] Scanning RDS instances with prefix=%s\n", prefix)
+
+	pageNum := 1
+	for {
+		req := rds.CreateDescribeDBInstancesRequest()
+		req.RegionId = p.region
+		req.PageSize = requests.NewInteger(100)
+		req.PageNumber = requests.NewInteger(pageNum)
+
+		resp, err := p.rdsClient.DescribeDBInstances(req)
+		if err != nil {
+			return fmt.Errorf("list RDS page %d: %w", pageNum, err)
+		}
+
+		for _, inst := range resp.Items.DBInstance {
+			// Match by Description (instance name), not ID
+			if !strings.HasPrefix(inst.DBInstanceDescription, prefix) {
 				continue
 			}
-			fmt.Printf("[Destroy] Failed to delete RDS %s: %v\n", inst.DBInstanceId, err)
-			result.Failed = append(result.Failed, resourceID)
-			continue
+
+			resourceID := fmt.Sprintf("RDS:%s", inst.DBInstanceId)
+			fmt.Printf("[Destroy] Found RDS instance: %s (name=%s, status=%s)\n",
+				inst.DBInstanceId, inst.DBInstanceDescription, inst.DBInstanceStatus)
+
+			if dryRun {
+				fmt.Printf("[Destroy] [DRY-RUN] Would delete RDS: %s\n", inst.DBInstanceId)
+				result.Skipped = append(result.Skipped, resourceID)
+				continue
+			}
+
+			if err := p.destroySingleRDS(ctx, inst.DBInstanceId); err != nil {
+				fmt.Printf("[Destroy] Failed to delete RDS %s: %v\n", inst.DBInstanceId, err)
+				result.Failed = append(result.Failed, resourceID)
+			} else {
+				fmt.Printf("[Destroy] RDS %s deleted\n", inst.DBInstanceId)
+				result.Deleted = append(result.Deleted, resourceID)
+			}
 		}
 
-		fmt.Printf("[Destroy] RDS %s delete initiated, waiting...\n", inst.DBInstanceId)
-		if err := p.waitForRDSDeleted(ctx, inst.DBInstanceId); err != nil {
-			fmt.Printf("[Destroy] Failed to wait for RDS %s deletion: %v\n", inst.DBInstanceId, err)
-			result.Failed = append(result.Failed, resourceID)
-		} else {
-			result.Deleted = append(result.Deleted, resourceID)
+		// Check if more pages
+		if len(resp.Items.DBInstance) < 100 {
+			break
 		}
+		pageNum++
 	}
 
 	return nil
@@ -146,7 +284,7 @@ func (p *Provider) destroyRDS(ctx context.Context, prefix string, dryRun bool, r
 
 // waitForRDSDeleted polls until RDS instance is deleted
 func (p *Provider) waitForRDSDeleted(ctx context.Context, instanceID string) error {
-	maxRetries := 60
+	maxRetries := 30 // 5 minutes total (30 * 10s)
 	for i := 0; i < maxRetries; i++ {
 		select {
 		case <-ctx.Done():
@@ -160,7 +298,6 @@ func (p *Provider) waitForRDSDeleted(ctx context.Context, instanceID string) err
 
 		resp, err := p.rdsClient.DescribeDBInstances(req)
 		if err != nil {
-			// Check if instance not found (means deleted)
 			if strings.Contains(err.Error(), "InvalidDBInstanceId.NotFound") {
 				fmt.Printf("[Destroy] RDS %s confirmed deleted\n", instanceID)
 				return nil
@@ -168,7 +305,6 @@ func (p *Provider) waitForRDSDeleted(ctx context.Context, instanceID string) err
 			return err
 		}
 
-		// Check if any instances returned
 		if len(resp.Items.DBInstance) == 0 {
 			fmt.Printf("[Destroy] RDS %s no longer exists\n", instanceID)
 			return nil
@@ -185,56 +321,52 @@ func (p *Provider) waitForRDSDeleted(ctx context.Context, instanceID string) err
 	return fmt.Errorf("timeout waiting for RDS %s deletion", instanceID)
 }
 
-// destroyRedis deletes Redis instances
+// destroyRedis deletes Redis instances matching prefix (using Name, not ID)
 func (p *Provider) destroyRedis(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
 	fmt.Printf("[Destroy] Scanning Redis instances with prefix=%s\n", prefix)
 
-	req := r_kvstore.CreateDescribeInstancesRequest()
-	req.RegionId = p.region
-	req.PageSize = requests.NewInteger(50)
+	pageNum := 1
+	for {
+		req := r_kvstore.CreateDescribeInstancesRequest()
+		req.RegionId = p.region
+		req.PageSize = requests.NewInteger(50)
+		req.PageNumber = requests.NewInteger(pageNum)
 
-	resp, err := p.kvstoreClient.DescribeInstances(req)
-	if err != nil {
-		return fmt.Errorf("list Redis: %w", err)
-	}
-
-	for _, inst := range resp.Instances.KVStoreInstance {
-		if !strings.Contains(inst.InstanceId, prefix) && !strings.Contains(inst.InstanceName, prefix) {
-			continue
+		resp, err := p.kvstoreClient.DescribeInstances(req)
+		if err != nil {
+			return fmt.Errorf("list Redis page %d: %w", pageNum, err)
 		}
 
-		resourceID := fmt.Sprintf("Redis:%s", inst.InstanceId)
-		fmt.Printf("[Destroy] Found Redis instance: %s (status=%s)\n", inst.InstanceId, inst.InstanceStatus)
-
-		if dryRun {
-			fmt.Printf("[Destroy] [DRY-RUN] Would delete Redis: %s\n", inst.InstanceId)
-			result.Skipped = append(result.Skipped, resourceID)
-			continue
-		}
-
-		// Delete the instance
-		delReq := r_kvstore.CreateDeleteInstanceRequest()
-		delReq.InstanceId = inst.InstanceId
-
-		if _, err := p.kvstoreClient.DeleteInstance(delReq); err != nil {
-			// Check if already deleted (idempotent)
-			if strings.Contains(err.Error(), "InvalidInstanceId.NotFound") {
-				fmt.Printf("[Destroy] Redis %s already deleted (idempotent)\n", inst.InstanceId)
-				result.Deleted = append(result.Deleted, resourceID)
+		for _, inst := range resp.Instances.KVStoreInstance {
+			// Match by InstanceName, not InstanceId
+			if !strings.HasPrefix(inst.InstanceName, prefix) {
 				continue
 			}
-			fmt.Printf("[Destroy] Failed to delete Redis %s: %v\n", inst.InstanceId, err)
-			result.Failed = append(result.Failed, resourceID)
-			continue
+
+			resourceID := fmt.Sprintf("Redis:%s", inst.InstanceId)
+			fmt.Printf("[Destroy] Found Redis instance: %s (name=%s, status=%s)\n",
+				inst.InstanceId, inst.InstanceName, inst.InstanceStatus)
+
+			if dryRun {
+				fmt.Printf("[Destroy] [DRY-RUN] Would delete Redis: %s\n", inst.InstanceId)
+				result.Skipped = append(result.Skipped, resourceID)
+				continue
+			}
+
+			if err := p.destroySingleRedis(ctx, inst.InstanceId); err != nil {
+				fmt.Printf("[Destroy] Failed to delete Redis %s: %v\n", inst.InstanceId, err)
+				result.Failed = append(result.Failed, resourceID)
+			} else {
+				fmt.Printf("[Destroy] Redis %s deleted\n", inst.InstanceId)
+				result.Deleted = append(result.Deleted, resourceID)
+			}
 		}
 
-		fmt.Printf("[Destroy] Redis %s delete initiated, waiting...\n", inst.InstanceId)
-		if err := p.waitForRedisDeleted(ctx, inst.InstanceId); err != nil {
-			fmt.Printf("[Destroy] Failed to wait for Redis %s deletion: %v\n", inst.InstanceId, err)
-			result.Failed = append(result.Failed, resourceID)
-		} else {
-			result.Deleted = append(result.Deleted, resourceID)
+		// Check if more pages
+		if len(resp.Instances.KVStoreInstance) < 50 {
+			break
 		}
+		pageNum++
 	}
 
 	return nil
@@ -242,7 +374,7 @@ func (p *Provider) destroyRedis(ctx context.Context, prefix string, dryRun bool,
 
 // waitForRedisDeleted polls until Redis instance is deleted
 func (p *Provider) waitForRedisDeleted(ctx context.Context, instanceID string) error {
-	maxRetries := 60
+	maxRetries := 30 // 5 minutes
 	for i := 0; i < maxRetries; i++ {
 		select {
 		case <-ctx.Done():
@@ -258,12 +390,12 @@ func (p *Provider) waitForRedisDeleted(ctx context.Context, instanceID string) e
 			return err
 		}
 
-		// Check if instance still exists
 		found := false
 		for _, inst := range resp.Instances.KVStoreInstance {
 			if inst.InstanceId == instanceID {
 				found = true
-				fmt.Printf("[Destroy] Redis %s status: %s (retry %d/%d)\n", instanceID, inst.InstanceStatus, i+1, maxRetries)
+				fmt.Printf("[Destroy] Redis %s status: %s (retry %d/%d)\n",
+					instanceID, inst.InstanceStatus, i+1, maxRetries)
 				break
 			}
 		}
@@ -277,132 +409,121 @@ func (p *Provider) waitForRedisDeleted(ctx context.Context, instanceID string) e
 	return fmt.Errorf("timeout waiting for Redis %s deletion", instanceID)
 }
 
-// destroyOSS deletes OSS buckets
+// destroyOSS deletes OSS buckets matching prefix
 func (p *Provider) destroyOSS(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
 	fmt.Printf("[Destroy] Scanning OSS buckets with prefix=%s\n", prefix)
 
-	// List all buckets
-	buckets, err := p.ossClient.ListBuckets()
-	if err != nil {
-		return fmt.Errorf("list OSS buckets: %w", err)
-	}
-
-	for _, bucket := range buckets.Buckets {
-		if !strings.Contains(bucket.Name, prefix) {
-			continue
-		}
-
-		resourceID := fmt.Sprintf("OSS:%s", bucket.Name)
-		fmt.Printf("[Destroy] Found OSS bucket: %s\n", bucket.Name)
-
-		if dryRun {
-			fmt.Printf("[Destroy] [DRY-RUN] Would delete OSS bucket: %s\n", bucket.Name)
-			result.Skipped = append(result.Skipped, resourceID)
-			continue
-		}
-
-		// Get bucket client
-		bucketClient, err := p.ossClient.Bucket(bucket.Name)
-		if err != nil {
-			fmt.Printf("[Destroy] Failed to get bucket client for %s: %v\n", bucket.Name, err)
-			result.Failed = append(result.Failed, resourceID)
-			continue
-		}
-
-		// Delete all objects first
-		marker := ""
-		for {
-			objects, err := bucketClient.ListObjects(oss.Marker(marker))
+	marker := ""
+	for {
+		// List buckets with pagination
+		var buckets []oss.BucketProperties
+		if marker == "" {
+			resp, err := p.ossClient.ListBuckets()
 			if err != nil {
-				fmt.Printf("[Destroy] Failed to list objects in bucket %s: %v\n", bucket.Name, err)
-				break
+				return fmt.Errorf("list OSS buckets: %w", err)
 			}
-
-			for _, obj := range objects.Objects {
-				if err := bucketClient.DeleteObject(obj.Key); err != nil {
-					fmt.Printf("[Destroy] Failed to delete object %s: %v\n", obj.Key, err)
-				}
+			buckets = resp.Buckets
+		} else {
+			resp, err := p.ossClient.ListBuckets(oss.Marker(marker))
+			if err != nil {
+				return fmt.Errorf("list OSS buckets: %w", err)
 			}
-
-			if !objects.IsTruncated {
-				break
-			}
-			marker = objects.NextMarker
+			buckets = resp.Buckets
 		}
 
-		// Delete the bucket
-		if err := p.ossClient.DeleteBucket(bucket.Name); err != nil {
-			// Check if already deleted (idempotent)
-			if strings.Contains(err.Error(), "NoSuchBucket") {
-				fmt.Printf("[Destroy] OSS bucket %s already deleted (idempotent)\n", bucket.Name)
-				result.Deleted = append(result.Deleted, resourceID)
+		for _, bucket := range buckets {
+			if !strings.HasPrefix(bucket.Name, prefix) {
 				continue
 			}
-			fmt.Printf("[Destroy] Failed to delete OSS bucket %s: %v\n", bucket.Name, err)
-			result.Failed = append(result.Failed, resourceID)
-			continue
+
+			resourceID := fmt.Sprintf("OSS:%s", bucket.Name)
+			fmt.Printf("[Destroy] Found OSS bucket: %s\n", bucket.Name)
+
+			if dryRun {
+				fmt.Printf("[Destroy] [DRY-RUN] Would delete OSS bucket: %s\n", bucket.Name)
+				result.Skipped = append(result.Skipped, resourceID)
+				continue
+			}
+
+			if err := p.destroySingleOSS(ctx, bucket.Name); err != nil {
+				fmt.Printf("[Destroy] Failed to delete OSS bucket %s: %v\n", bucket.Name, err)
+				result.Failed = append(result.Failed, resourceID)
+			} else {
+				fmt.Printf("[Destroy] OSS bucket %s deleted\n", bucket.Name)
+				result.Deleted = append(result.Deleted, resourceID)
+			}
 		}
 
-		fmt.Printf("[Destroy] OSS bucket %s deleted\n", bucket.Name)
-		result.Deleted = append(result.Deleted, resourceID)
+		// Check for more buckets (simplified pagination)
+		resp, _ := p.ossClient.ListBuckets(oss.Marker(marker))
+		if !resp.IsTruncated {
+			break
+		}
+		marker = resp.NextMarker
 	}
 
 	return nil
 }
 
-// destroyVSwitches deletes VSwitchs
+// destroyVSwitches deletes VSwitchs with pagination and retry
 func (p *Provider) destroyVSwitches(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
 	fmt.Printf("[Destroy] Scanning VSwitches with prefix=%s\n", prefix)
 
-	req := vpc.CreateDescribeVSwitchesRequest()
-	req.RegionId = p.region
-	req.PageSize = requests.NewInteger(50)
-
-	resp, err := p.vpcClient.DescribeVSwitches(req)
-	if err != nil {
-		return fmt.Errorf("list VSwitches: %w", err)
-	}
-
-	// Track failed VSwitches for retry
+	pageNum := 1
 	failedVSwitches := []string{}
 
-	for _, vsw := range resp.VSwitches.VSwitch {
-		if !strings.Contains(vsw.VSwitchName, prefix) {
-			continue
+	for {
+		req := vpc.CreateDescribeVSwitchesRequest()
+		req.RegionId = p.region
+		req.PageSize = requests.NewInteger(50)
+		req.PageNumber = requests.NewInteger(pageNum)
+
+		resp, err := p.vpcClient.DescribeVSwitches(req)
+		if err != nil {
+			return fmt.Errorf("list VSwitches page %d: %w", pageNum, err)
 		}
 
-		resourceID := fmt.Sprintf("VSwitch:%s", vsw.VSwitchId)
-		fmt.Printf("[Destroy] Found VSwitch: %s (vpc=%s)\n", vsw.VSwitchId, vsw.VpcId)
+		for _, vsw := range resp.VSwitches.VSwitch {
+			if !strings.HasPrefix(vsw.VSwitchName, prefix) {
+				continue
+			}
 
-		if dryRun {
-			fmt.Printf("[Destroy] [DRY-RUN] Would delete VSwitch: %s\n", vsw.VSwitchId)
-			result.Skipped = append(result.Skipped, resourceID)
-			continue
+			resourceID := fmt.Sprintf("VSwitch:%s", vsw.VSwitchId)
+			fmt.Printf("[Destroy] Found VSwitch: %s (vpc=%s)\n", vsw.VSwitchId, vsw.VpcId)
+
+			if dryRun {
+				fmt.Printf("[Destroy] [DRY-RUN] Would delete VSwitch: %s\n", vsw.VSwitchId)
+				result.Skipped = append(result.Skipped, resourceID)
+				continue
+			}
+
+			if err := p.deleteVSwitchWithRetry(ctx, vsw.VSwitchId); err != nil {
+				fmt.Printf("[Destroy] Failed to delete VSwitch %s: %v\n", vsw.VSwitchId, err)
+				failedVSwitches = append(failedVSwitches, vsw.VSwitchId)
+				result.Failed = append(result.Failed, resourceID)
+			} else {
+				fmt.Printf("[Destroy] VSwitch %s deleted\n", vsw.VSwitchId)
+				result.Deleted = append(result.Deleted, resourceID)
+			}
 		}
 
-		// Try to delete with retry for dependency violations
-		if err := p.deleteVSwitchWithRetry(ctx, vsw.VSwitchId); err != nil {
-			fmt.Printf("[Destroy] Failed to delete VSwitch %s: %v\n", vsw.VSwitchId, err)
-			failedVSwitches = append(failedVSwitches, vsw.VSwitchId)
-			result.Failed = append(result.Failed, resourceID)
-		} else {
-			fmt.Printf("[Destroy] VSwitch %s deleted\n", vsw.VSwitchId)
-			result.Deleted = append(result.Deleted, resourceID)
+		// Check if more pages
+		if len(resp.VSwitches.VSwitch) < 50 {
+			break
 		}
+		pageNum++
 	}
 
-	// Retry failed VSwitches after waiting
+	// Retry failed VSwitches
 	if len(failedVSwitches) > 0 {
-		fmt.Printf("[Destroy] Retrying %d failed VSwitches after 30s...\n", len(failedVSwitches))
-		time.Sleep(30 * time.Second)
-
+		fmt.Printf("[Destroy] Retrying %d failed VSwitches...\n", len(failedVSwitches))
 		for _, vswID := range failedVSwitches {
 			resourceID := fmt.Sprintf("VSwitch:%s", vswID)
 			if err := p.deleteVSwitchWithRetry(ctx, vswID); err != nil {
 				fmt.Printf("[Destroy] Retry failed for VSwitch %s: %v\n", vswID, err)
 			} else {
 				fmt.Printf("[Destroy] VSwitch %s deleted on retry\n", vswID)
-				// Remove from failed list
+				// Move from failed to deleted
 				for i, f := range result.Failed {
 					if f == resourceID {
 						result.Failed = append(result.Failed[:i], result.Failed[i+1:]...)
@@ -419,7 +540,7 @@ func (p *Provider) destroyVSwitches(ctx context.Context, prefix string, dryRun b
 
 // deleteVSwitchWithRetry attempts to delete a VSwitch with retry logic
 func (p *Provider) deleteVSwitchWithRetry(ctx context.Context, vswID string) error {
-	maxRetries := 3
+	maxRetries := 6 // Total ~3 minutes (6 * 30s)
 	for i := 0; i < maxRetries; i++ {
 		delReq := vpc.CreateDeleteVSwitchRequest()
 		delReq.VSwitchId = vswID
@@ -438,9 +559,10 @@ func (p *Provider) deleteVSwitchWithRetry(ctx context.Context, vswID string) err
 		// Check for dependency violation - wait and retry
 		if strings.Contains(err.Error(), "DependencyViolation") {
 			if i < maxRetries-1 {
-				fmt.Printf("[Destroy] VSwitch %s has dependencies, waiting 10s before retry %d/%d...\n",
-					vswID, i+1, maxRetries)
-				time.Sleep(10 * time.Second)
+				waitTime := 30 * time.Second
+				fmt.Printf("[Destroy] VSwitch %s has dependencies, waiting %v before retry %d/%d...\n",
+					vswID, waitTime, i+1, maxRetries)
+				time.Sleep(waitTime)
 				continue
 			}
 		}
@@ -451,41 +573,50 @@ func (p *Provider) deleteVSwitchWithRetry(ctx context.Context, vswID string) err
 	return fmt.Errorf("max retries exceeded for VSwitch %s", vswID)
 }
 
-// destroyVPCs deletes VPCs
+// destroyVPCs deletes VPCs with pagination and retry
 func (p *Provider) destroyVPCs(ctx context.Context, prefix string, dryRun bool, result *DestroyResult) error {
 	fmt.Printf("[Destroy] Scanning VPCs with prefix=%s\n", prefix)
 
-	req := vpc.CreateDescribeVpcsRequest()
-	req.RegionId = p.region
-	req.PageSize = requests.NewInteger(50)
+	pageNum := 1
+	for {
+		req := vpc.CreateDescribeVpcsRequest()
+		req.RegionId = p.region
+		req.PageSize = requests.NewInteger(50)
+		req.PageNumber = requests.NewInteger(pageNum)
 
-	resp, err := p.vpcClient.DescribeVpcs(req)
-	if err != nil {
-		return fmt.Errorf("list VPCs: %w", err)
-	}
-
-	for _, vpcInfo := range resp.Vpcs.Vpc {
-		if !strings.Contains(vpcInfo.VpcName, prefix) {
-			continue
+		resp, err := p.vpcClient.DescribeVpcs(req)
+		if err != nil {
+			return fmt.Errorf("list VPCs page %d: %w", pageNum, err)
 		}
 
-		resourceID := fmt.Sprintf("VPC:%s", vpcInfo.VpcId)
-		fmt.Printf("[Destroy] Found VPC: %s\n", vpcInfo.VpcId)
+		for _, vpcInfo := range resp.Vpcs.Vpc {
+			if !strings.HasPrefix(vpcInfo.VpcName, prefix) {
+				continue
+			}
 
-		if dryRun {
-			fmt.Printf("[Destroy] [DRY-RUN] Would delete VPC: %s\n", vpcInfo.VpcId)
-			result.Skipped = append(result.Skipped, resourceID)
-			continue
+			resourceID := fmt.Sprintf("VPC:%s", vpcInfo.VpcId)
+			fmt.Printf("[Destroy] Found VPC: %s\n", vpcInfo.VpcId)
+
+			if dryRun {
+				fmt.Printf("[Destroy] [DRY-RUN] Would delete VPC: %s\n", vpcInfo.VpcId)
+				result.Skipped = append(result.Skipped, resourceID)
+				continue
+			}
+
+			if err := p.deleteVPCWithRetry(ctx, vpcInfo.VpcId); err != nil {
+				fmt.Printf("[Destroy] Failed to delete VPC %s: %v\n", vpcInfo.VpcId, err)
+				result.Failed = append(result.Failed, resourceID)
+			} else {
+				fmt.Printf("[Destroy] VPC %s deleted\n", vpcInfo.VpcId)
+				result.Deleted = append(result.Deleted, resourceID)
+			}
 		}
 
-		// Try to delete with retry for dependency violations
-		if err := p.deleteVPCWithRetry(ctx, vpcInfo.VpcId); err != nil {
-			fmt.Printf("[Destroy] Failed to delete VPC %s: %v\n", vpcInfo.VpcId, err)
-			result.Failed = append(result.Failed, resourceID)
-		} else {
-			fmt.Printf("[Destroy] VPC %s deleted\n", vpcInfo.VpcId)
-			result.Deleted = append(result.Deleted, resourceID)
+		// Check if more pages
+		if len(resp.Vpcs.Vpc) < 50 {
+			break
 		}
+		pageNum++
 	}
 
 	return nil
@@ -493,7 +624,7 @@ func (p *Provider) destroyVPCs(ctx context.Context, prefix string, dryRun bool, 
 
 // deleteVPCWithRetry attempts to delete a VPC with retry logic
 func (p *Provider) deleteVPCWithRetry(ctx context.Context, vpcID string) error {
-	maxRetries := 5
+	maxRetries := 6 // Total ~3 minutes
 	for i := 0; i < maxRetries; i++ {
 		delReq := vpc.CreateDeleteVpcRequest()
 		delReq.VpcId = vpcID
@@ -512,7 +643,7 @@ func (p *Provider) deleteVPCWithRetry(ctx context.Context, vpcID string) error {
 		// Check for dependency violation - wait and retry
 		if strings.Contains(err.Error(), "DependencyViolation") {
 			if i < maxRetries-1 {
-				waitTime := time.Duration(10+i*5) * time.Second
+				waitTime := 30 * time.Second
 				fmt.Printf("[Destroy] VPC %s has dependencies, waiting %v before retry %d/%d...\n",
 					vpcID, waitTime, i+1, maxRetries)
 				time.Sleep(waitTime)

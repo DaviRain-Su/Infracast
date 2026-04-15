@@ -366,15 +366,7 @@ func (p *Provider) Apply(ctx context.Context, plan *providers.PlanResult) (*prov
 	return nil, fmt.Errorf("apply not implemented")
 }
 
-// Destroy destroys all resources for an environment
-func (p *Provider) Destroy(ctx context.Context, envID string) error {
-	opts := DestroyOptions{
-		DryRun: false,
-		Prefix: fmt.Sprintf("infracast-%s", envID),
-	}
-	_, err := p.DestroyEnvironment(ctx, envID, opts)
-	return err
-}
+// Note: Destroy method is implemented in destroy.go
 
 // OTLPEndpoint returns the OpenTelemetry endpoint
 func (p *Provider) OTLPEndpoint() string {
