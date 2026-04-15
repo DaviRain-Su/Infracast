@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"time"
@@ -57,6 +58,9 @@ func (b *Builder) Build(ctx context.Context, appName, commit string) (*BuildResu
 	
 	// Execute encore build
 	cmd := exec.CommandContext(ctx, "encore", "build", "docker", imageTag)
+	if appRoot := os.Getenv("ENCORE_APP_ROOT"); appRoot != "" {
+		cmd.Dir = appRoot
+	}
 	
 	output, err := cmd.CombinedOutput()
 	outputStr := string(output)
@@ -174,6 +178,9 @@ func (b *Builder) StreamBuild(ctx context.Context, appName, commit string, outpu
 	
 	imageTag := fmt.Sprintf("%s:%s", appName, commit[:7])
 	cmd := exec.CommandContext(ctx, "encore", "build", "docker", imageTag)
+	if appRoot := os.Getenv("ENCORE_APP_ROOT"); appRoot != "" {
+		cmd.Dir = appRoot
+	}
 	
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

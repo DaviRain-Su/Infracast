@@ -4,6 +4,7 @@ package e2e
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -42,6 +43,17 @@ func TestFullE2EDeployment(t *testing.T) {
 	appName := "hello-world"
 	env := "e2e"
 	commit := "e2e-" + time.Now().Format("20060102-150405")
+
+	// Default ENCORE_APP_ROOT for local full E2E runs.
+	if os.Getenv("ENCORE_APP_ROOT") == "" {
+		if wd, err := os.Getwd(); err == nil {
+			testAppRoot := filepath.Join(wd, "testapp")
+			if _, err := os.Stat(filepath.Join(testAppRoot, "encore.app")); err == nil {
+				_ = os.Setenv("ENCORE_APP_ROOT", testAppRoot)
+				t.Logf("Using ENCORE_APP_ROOT=%s", testAppRoot)
+			}
+		}
+	}
 
 	t.Run("Full_Deploy_Pipeline", func(t *testing.T) {
 		// Create pipeline
