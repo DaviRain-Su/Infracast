@@ -34,7 +34,9 @@ type Provider struct {
 
 // NewProvider creates a new AliCloud provider instance
 func NewProvider(region, accessKeyID, accessKeySecret string) (*Provider, error) {
-	config := sdk.NewConfig()
+	config := sdk.NewConfig().
+		WithTimeout(60 * time.Second).
+		WithScheme("HTTPS")
 	cred := credentials.NewAccessKeyCredential(accessKeyID, accessKeySecret)
 
 	rdsClient, err := rds.NewClientWithOptions(region, config, cred)
@@ -148,11 +150,12 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	if describeResp, err := p.rdsClient.DescribeDBInstances(describeReq); err == nil && len(describeResp.Items.DBInstance) > 0 {
 		// Instance exists, return current info
 		existing := describeResp.Items.DBInstance[0]
+		username := defaultDBUsername(spec.Engine)
 		return &providers.DatabaseOutput{
 			ResourceID: existing.DBInstanceId,
 			Endpoint:   existing.ConnectionString,
 			Port:       getPortForEngine(spec.Engine),
-			Username:   "root",
+			Username:   username,
 			Password:   "",
 		}, nil
 	}
@@ -172,7 +175,8 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 
 	// Generate and set initial password
 	password := generateRandomPassword()
-	if err := p.setDBPassword(ctx, instanceID, "root", password); err != nil {
+	username, err := p.setDBPassword(ctx, instanceID, defaultDBUsername(spec.Engine), password)
+	if err != nil {
 		return nil, fmt.Errorf("failed to set DB password: %w", err)
 	}
 
@@ -180,7 +184,7 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 		ResourceID: instanceID,
 		Endpoint:   endpoint,
 		Port:       getPortForEngine(spec.Engine),
-		Username:   "root",
+		Username:   username,
 		Password:   password,
 	}, nil
 }
@@ -194,6 +198,15 @@ func getPortForEngine(engine string) int {
 		return 3306
 	default:
 		return 3306
+	}
+}
+
+func defaultDBUsername(engine string) string {
+	switch strings.ToLower(engine) {
+	case "postgresql", "postgres":
+		return "postgres"
+	default:
+		return "root"
 	}
 }
 
@@ -226,16 +239,20 @@ func (p *Provider) ProvisionCache(ctx context.Context, spec providers.CacheSpec)
 		}
 	}
 
-	// Determine instance class based on memory
-	instanceClass := "redis.master.small.default"
-	if spec.MemoryMB >= 4096 {
-		instanceClass = "redis.master.mid.default"
+	// Try Redis creation with instance-class fallback + zone fallback.
+	var response *r_kvstore.CreateInstanceResponse
+	var createErr error
+	for _, instanceClass := range candidateRedisInstanceClasses(spec.MemoryMB) {
+		response, createErr = p.createRedisWithZoneFallback(vpcID, vswID, instanceClass, spec)
+		if createErr == nil {
+			break
+		}
+		if !isRedisCreateRetryable(createErr) {
+			return nil, fmt.Errorf("failed to create Redis instance: %w", createErr)
+		}
 	}
-
-	// Try creating Redis with zone fallback (similar to RDS approach)
-	response, err := p.createRedisWithZoneFallback(vpcID, vswID, instanceClass, spec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Redis instance: %w", err)
+	if createErr != nil {
+		return nil, fmt.Errorf("failed to create Redis instance: %w", createErr)
 	}
 
 	// Poll for instance to be ready and get endpoint
@@ -371,7 +388,7 @@ func (p *Provider) waitForDBInstanceReady(ctx context.Context, instanceID string
 }
 
 // setDBPassword sets the initial password for the database root account
-func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, password string) error {
+func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, password string) (string, error) {
 	// For MySQL/PostgreSQL on Aliyun, we need to reset the account password
 	// Try to reset the account password (works for existing accounts like 'root')
 	req := rds.CreateResetAccountPasswordRequest()
@@ -390,11 +407,21 @@ func (p *Provider) setDBPassword(ctx context.Context, instanceID, username, pass
 		
 		_, err = p.rdsClient.CreateAccount(createReq)
 		if err != nil {
-			return fmt.Errorf("failed to set password: %w", err)
+			// Keyword/reserved account names may be forbidden for certain engines.
+			if strings.Contains(err.Error(), "InvalidAccountName.Forbid") {
+				fallback := "infracast_admin"
+				createReq.AccountName = fallback
+				if _, fallbackErr := p.rdsClient.CreateAccount(createReq); fallbackErr == nil {
+					return fallback, nil
+				} else {
+					return "", fmt.Errorf("failed to set password: %w", fallbackErr)
+				}
+			}
+			return "", fmt.Errorf("failed to set password: %w", err)
 		}
 	}
 	
-	return nil
+	return username, nil
 }
 
 func (p *Provider) createDBInstanceWithFallback(request *rds.CreateDBInstanceRequest) (*rds.CreateDBInstanceResponse, error) {
@@ -441,19 +468,94 @@ func candidateDBInstanceClasses(engine, preferred string) []string {
 	return classes
 }
 
+func candidateRedisInstanceClasses(memoryMB int) []string {
+	classes := make([]string, 0, 8)
+	seen := map[string]struct{}{}
+	add := func(v string) {
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		classes = append(classes, v)
+	}
+
+	switch {
+	case memoryMB >= 16384:
+		add("redis.master.large.default")
+	case memoryMB >= 4096:
+		add("redis.master.mid.default")
+	default:
+		add("redis.master.small.default")
+	}
+
+	// Regional fallbacks
+	add("redis.master.micro.default")
+	add("redis.master.small.default")
+	add("redis.master.mid.default")
+	add("redis.master.large.default")
+	return classes
+}
+
+func isRedisCreateRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "InvalidvSwitchId") ||
+		strings.Contains(s, "ResourceNotAvailable") ||
+		strings.Contains(s, "InvalidInstanceClass.NotFound") ||
+		strings.Contains(s, "failed to create Redis in any available zone")
+}
+
 // generateRandomPassword generates a cryptographically secure random password
 func generateRandomPassword() string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
-	const length = 16
-	
-	b := make([]byte, length)
+	const (
+		length  = 16
+		upper   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		lower   = "abcdefghijklmnopqrstuvwxyz"
+		digits  = "0123456789"
+		special = "!@#%^*-_+="
+		all     = upper + lower + digits + special
+	)
+
+	p := make([]byte, length)
+	p[0] = pickRandChar(upper)
+	p[1] = pickRandChar(lower)
+	p[2] = pickRandChar(digits)
+	p[3] = pickRandChar(special)
+	for i := 4; i < length; i++ {
+		p[i] = pickRandChar(all)
+	}
+	secureShuffle(p)
+	return string(p)
+}
+
+func pickRandChar(charset string) byte {
+	if charset == "" {
+		panic("empty charset")
+	}
+	b := make([]byte, 1)
 	if _, err := rand.Read(b); err != nil {
 		panic("crypto/rand failed: " + err.Error())
 	}
-	for i := range b {
-		b[i] = charset[b[i]%byte(len(charset))]
+	return charset[int(b[0])%len(charset)]
+}
+
+func secureShuffle(data []byte) {
+	if len(data) < 2 {
+		return
 	}
-	return string(b)
+	r := make([]byte, len(data))
+	if _, err := rand.Read(r); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	for i := len(data) - 1; i > 0; i-- {
+		j := int(r[i]) % (i + 1)
+		data[i], data[j] = data[j], data[i]
+	}
 }
 
 // waitForCacheInstanceReady polls until the Redis instance is ready and returns the endpoint
@@ -509,17 +611,22 @@ func (p *Provider) createRedisWithZoneFallback(vpcID, vswID, instanceClass strin
 		request.EngineVersion = "5.0"
 	}
 
-	// Try creating with the provided VSwitch first
+	// Try creating with the provided VSwitch first.
 	resp, err := p.kvstoreClient.CreateInstance(request)
 	if err == nil {
 		return resp, nil
 	}
 
-	// If zone not supported, try creating VSwitch in other zones
-	if strings.Contains(err.Error(), "InvalidvSwitchId") || strings.Contains(err.Error(), "zone not supported") {
-		return p.createRedisWithNewVSwitch(vpcID, instanceClass, spec)
+	// Then try creating Redis in a fresh VSwitch across available zones.
+	fallbackResp, fallbackErr := p.createRedisWithNewVSwitch(vpcID, instanceClass, spec)
+	if fallbackErr == nil {
+		return fallbackResp, nil
 	}
 
+	// Prefer the original provider error unless it was clearly a zone/vswitch mismatch.
+	if strings.Contains(err.Error(), "InvalidvSwitchId") || strings.Contains(err.Error(), "zone not supported") {
+		return nil, fallbackErr
+	}
 	return nil, err
 }
 
@@ -536,7 +643,7 @@ func (p *Provider) createRedisWithNewVSwitch(vpcID, instanceClass string, spec p
 	}
 
 	// Try each available zone
-	for _, zone := range zoneResp.AvailableZones.AvailableZone {
+	for i, zone := range zoneResp.AvailableZones.AvailableZone {
 		zoneID := zone.ZoneId
 		
 		// Create VSwitch in this zone
@@ -544,8 +651,8 @@ func (p *Provider) createRedisWithNewVSwitch(vpcID, instanceClass string, spec p
 		vswReq.RegionId = p.region
 		vswReq.VpcId = vpcID
 		vswReq.ZoneId = zoneID
-		vswReq.CidrBlock = "10.0.1.0/24" // Different CIDR for Redis
-		vswReq.VSwitchName = fmt.Sprintf("infracast-redis-%s", zoneID)
+		vswReq.CidrBlock = fmt.Sprintf("10.0.%d.0/24", 10+i)
+		vswReq.VSwitchName = fmt.Sprintf("infracast-redis-%s-%d", zoneID, time.Now().UnixNano())
 		
 		vswResp, err := p.vpcClient.CreateVSwitch(vswReq)
 		if err != nil {
@@ -580,16 +687,38 @@ func (p *Provider) createRedisWithNewVSwitch(vpcID, instanceClass string, spec p
 
 // setCachePassword sets the password for the Redis instance
 func (p *Provider) setCachePassword(ctx context.Context, instanceID, password string) error {
-	// Try to reset the account password for the default account
+	_ = ctx
+
+	// Try to discover an existing account first.
+	accountName := "default"
+	describeReq := r_kvstore.CreateDescribeAccountsRequest()
+	describeReq.InstanceId = instanceID
+	if describeResp, err := p.kvstoreClient.DescribeAccounts(describeReq); err == nil {
+		if describeResp != nil && len(describeResp.Accounts.Account) > 0 && describeResp.Accounts.Account[0].AccountName != "" {
+			accountName = describeResp.Accounts.Account[0].AccountName
+		}
+	}
+
+	// Try to reset the account password.
 	req := r_kvstore.CreateResetAccountPasswordRequest()
 	req.InstanceId = instanceID
-	req.AccountName = "default" // Default account name for Redis
+	req.AccountName = accountName
 	req.AccountPassword = password
 	
 	_, err := p.kvstoreClient.ResetAccountPassword(req)
 	if err != nil {
-		// If reset fails, the password might be auto-generated or set during creation
-		// This is a simplified implementation
+		// Some instance types do not expose a resettable account. Fall back to
+		// instance-level password update.
+		if strings.Contains(err.Error(), "InvalidAccountName.NotFound") {
+			modReq := r_kvstore.CreateModifyInstanceAttributeRequest()
+			modReq.InstanceId = instanceID
+			modReq.NewPassword = password
+			if _, modErr := p.kvstoreClient.ModifyInstanceAttribute(modReq); modErr == nil {
+				return nil
+			} else {
+				return fmt.Errorf("failed to set Redis password: %w", modErr)
+			}
+		}
 		return fmt.Errorf("failed to set Redis password: %w", err)
 	}
 	
