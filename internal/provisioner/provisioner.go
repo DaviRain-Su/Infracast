@@ -11,6 +11,7 @@ import (
 	"github.com/DaviRain-Su/infracast/internal/state"
 	"github.com/DaviRain-Su/infracast/pkg/hash"
 	"github.com/DaviRain-Su/infracast/providers"
+	alicloudprovider "github.com/DaviRain-Su/infracast/providers/alicloud"
 )
 
 // ResourceState represents the state of a resource in the provisioning lifecycle
@@ -345,6 +346,13 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 		result.Success = false
 		result.ErrorMsg = fmt.Sprintf("%s: provider not found: %v", ErrInvalidSpec, err)
 		return result
+	}
+
+	// Wire SC-4 network reuse context into AliCloud provider.
+	// This keeps VPC/VSwitch state persistent across runs.
+	if aliProvider, ok := provider.(*alicloudprovider.Provider); ok {
+		aliProvider.SetStateStore(p.store)
+		aliProvider.SetEnvironment(envID)
 	}
 
 	// Create or update resource in state store

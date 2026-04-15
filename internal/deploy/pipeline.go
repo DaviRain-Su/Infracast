@@ -2,10 +2,14 @@
 package deploy
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +27,7 @@ type Pipeline struct {
 	healthChecker   *HealthChecker
 	rollbackManager *RollbackManager
 	auditStore      *state.AuditStore
+	provisionStore  *state.Store
 	verbose         bool
 }
 
@@ -108,6 +113,36 @@ func (p *Pipeline) Execute(ctx context.Context, input *PipelineInput) *PipelineR
 		cancel()
 	}()
 
+	// Keep state store lifecycle at Execute scope (not per step).
+	dbPath := strings.TrimSpace(os.Getenv("INFRACAST_STATE_DB"))
+	if dbPath != "" && p.provisionStore == nil {
+		if store, err := state.NewStore(dbPath); err == nil {
+			p.provisionStore = store
+			defer func() {
+				_ = p.provisionStore.Close()
+				p.provisionStore = nil
+			}()
+		} else {
+			p.logf("state store init skipped: %v", err)
+		}
+	}
+
+	// Pre-initialize clients when sufficient configuration is present.
+	// Missing config is deferred to step-level validation for clearer errors.
+	if p.builder == nil {
+		p.builder = NewBuilder()
+	}
+	if input.AliAccessKey != "" && input.AliSecretKey != "" {
+		if err := p.initACRClient(input); err != nil {
+			p.logf("ACR client pre-init skipped: %v", err)
+		}
+	}
+	if input.ACKubeConfig != "" || os.Getenv("KUBECONFIG") != "" {
+		if err := p.initK8sRuntime(input); err != nil {
+			p.logf("K8s client pre-init skipped: %v", err)
+		}
+	}
+
 	// Step 1: Build (delegated to encore build)
 	step1 := p.executeStep("Build", func() error {
 		return p.stepBuild(ctx, input)
@@ -174,6 +209,7 @@ func (p *Pipeline) Execute(ctx context.Context, input *PipelineInput) *PipelineR
 	})
 	result.Steps = append(result.Steps, step7)
 	// Notify failure is non-blocking
+	result.FinalImage = input.ImageTag
 
 	return p.finalizeResult(result, start, 0, nil)
 }
@@ -256,14 +292,36 @@ func (p *Pipeline) stepBuild(ctx context.Context, input *PipelineInput) error {
 // stepPush pushes image to ACR
 func (p *Pipeline) stepPush(ctx context.Context, input *PipelineInput) error {
 	if p.acrClient == nil {
-		return fmt.Errorf("ACR client not initialized")
+		if err := p.initACRClient(input); err != nil {
+			return err
+		}
+	}
+
+	localImage := strings.TrimSpace(input.LocalImage)
+	if localImage == "" && input.BuildResult != nil {
+		localImage = strings.TrimSpace(input.BuildResult.ImageTag)
+	}
+	if localImage == "" {
+		return fmt.Errorf("EDEPLOY040: local image is empty")
+	}
+
+	pushTag := strings.TrimSpace(input.ImageTag)
+	if idx := strings.LastIndex(pushTag, ":"); idx >= 0 && idx < len(pushTag)-1 {
+		pushTag = pushTag[idx+1:]
+	}
+	if pushTag == "" {
+		pushTag = strings.TrimSpace(input.Commit)
+	}
+	if len(pushTag) > 32 {
+		pushTag = pushTag[:32]
 	}
 	
-	finalImage, err := p.acrClient.PushImage(ctx, input.LocalImage, input.ImageTag)
+	finalImage, err := p.acrClient.PushImage(ctx, localImage, pushTag)
 	if err != nil {
 		return err
 	}
 	
+	input.ImageTag = finalImage
 	p.logf("  Pushed image: %s", finalImage)
 	return nil
 }
@@ -285,6 +343,10 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 	provider, err := alicloud.NewProvider(input.ACRRegion, input.AliAccessKey, input.AliSecretKey)
 	if err != nil {
 		return fmt.Errorf("EDEPLOY074: failed to create provider: %w", err)
+	}
+	provider.SetEnvironment(input.Env)
+	if p.provisionStore != nil {
+		provider.SetStateStore(p.provisionStore)
 	}
 	
 	// Map build metadata to resource specs
@@ -399,8 +461,8 @@ func (p *Pipeline) stepGenerateConfig(ctx context.Context, input *PipelineInput)
 
 // stepDeploy deploys to K8s
 func (p *Pipeline) stepDeploy(ctx context.Context, input *PipelineInput) error {
-	if p.k8sClient == nil {
-		return fmt.Errorf("EDEPLOY010: K8s client not initialized")
+	if err := p.initK8sRuntime(input); err != nil {
+		return err
 	}
 	
 	p.log("  Generating K8s manifests...")
@@ -436,8 +498,8 @@ func (p *Pipeline) stepDeploy(ctx context.Context, input *PipelineInput) error {
 
 // stepVerify verifies deployment health
 func (p *Pipeline) stepVerify(ctx context.Context, input *PipelineInput) error {
-	if p.healthChecker == nil {
-		return fmt.Errorf("EDEPLOY050: health checker not initialized")
+	if err := p.initK8sRuntime(input); err != nil {
+		return err
 	}
 	
 	p.log("  Verifying deployment health...")
@@ -461,18 +523,161 @@ func (p *Pipeline) stepVerify(ctx context.Context, input *PipelineInput) error {
 
 // stepRollback performs rollback on failure
 func (p *Pipeline) stepRollback(ctx context.Context, input *PipelineInput) error {
-	if p.rollbackManager == nil {
-		return fmt.Errorf("rollback manager not initialized")
+	if err := p.initK8sRuntime(input); err != nil {
+		return err
 	}
 	
 	p.log("  Rolling back deployment...")
 	return p.rollbackManager.Rollback(ctx, input.AppName, RollbackStrategyK8s)
 }
 
+func (p *Pipeline) initACRClient(input *PipelineInput) error {
+	if p.acrClient != nil {
+		return nil
+	}
+
+	if strings.TrimSpace(input.AliAccessKey) == "" || strings.TrimSpace(input.AliSecretKey) == "" {
+		return fmt.Errorf("EDEPLOY072: ACR requires AliCloud credentials")
+	}
+
+	region := strings.TrimSpace(input.ACRRegion)
+	if region == "" {
+		region = "cn-hangzhou"
+	}
+	namespace := strings.TrimSpace(input.ACRNamespace)
+	if namespace == "" {
+		namespace = "infracast"
+	}
+
+	client, err := NewACRClient(region, input.AliAccessKey, input.AliSecretKey, namespace)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY072: failed to initialize ACR client: %w", err)
+	}
+	p.acrClient = client
+	return nil
+}
+
+func (p *Pipeline) initK8sRuntime(input *PipelineInput) error {
+	if p.k8sClient != nil && p.healthChecker != nil && p.rollbackManager != nil {
+		return nil
+	}
+
+	kubeConfig := strings.TrimSpace(input.ACKubeConfig)
+	if kubeConfig == "" {
+		kubeConfig = strings.TrimSpace(os.Getenv("KUBECONFIG"))
+	}
+	if kubeConfig == "" {
+		return fmt.Errorf("EDEPLOY011: kubeconfig required (ACKubeConfig or KUBECONFIG)")
+	}
+
+	region := strings.TrimSpace(input.ACRRegion)
+	if region == "" {
+		region = "cn-hangzhou"
+	}
+	namespace := strings.TrimSpace(input.Env)
+	if namespace == "" {
+		namespace = "default"
+	}
+
+	if p.k8sClient == nil {
+		client, err := NewK8sClient(namespace, &K8sConfig{
+			KubeConfigPath: kubeConfig,
+			ClusterID:      input.ACKClusterID,
+			Region:         region,
+		})
+		if err != nil {
+			return err
+		}
+		p.k8sClient = client
+	}
+	if p.healthChecker == nil {
+		p.healthChecker = NewHealthChecker(p.k8sClient)
+	}
+	if p.rollbackManager == nil {
+		p.rollbackManager = NewRollbackManager(p.k8sClient)
+	}
+
+	return nil
+}
+
 // stepNotify sends notifications
 func (p *Pipeline) stepNotify(ctx context.Context, input *PipelineInput) error {
 	p.log("  Sending notifications...")
-	// TODO: Send Feishu/DingTalk notifications
+	message := fmt.Sprintf("infracast deploy success: app=%s env=%s image=%s", input.AppName, input.Env, input.ImageTag)
+	urls := p.notifyWebhooks()
+	if len(urls) == 0 {
+		p.log("  Notification skipped: no webhook configured")
+		return nil
+	}
+
+	var firstErr error
+	for _, webhook := range urls {
+		if err := p.postWebhook(ctx, webhook, message); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			p.logf("  Notification failed for %s: %v", webhook, err)
+		}
+	}
+	if firstErr != nil {
+		return fmt.Errorf("EDEPLOY080: notify failed: %w", firstErr)
+	}
+	p.log("  Notification sent")
+	return nil
+}
+
+func (p *Pipeline) notifyWebhooks() []string {
+	candidates := []string{
+		strings.TrimSpace(os.Getenv("INFRACAST_NOTIFY_WEBHOOK")),
+		strings.TrimSpace(os.Getenv("DINGTALK_WEBHOOK")),
+		strings.TrimSpace(os.Getenv("FEISHU_WEBHOOK")),
+	}
+	urls := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{})
+	for _, u := range candidates {
+		if u == "" {
+			continue
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		urls = append(urls, u)
+	}
+	return urls
+}
+
+func (p *Pipeline) postWebhook(ctx context.Context, webhookURL, message string) error {
+	payload := map[string]interface{}{
+		"msg_type": "text", // Feishu
+		"msgtype":  "text", // DingTalk
+		"text": map[string]string{
+			"content": message,
+		},
+		"content": map[string]string{
+			"text": message,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("status=%d", resp.StatusCode)
+	}
 	return nil
 }
 

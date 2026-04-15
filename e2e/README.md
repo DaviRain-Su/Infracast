@@ -27,8 +27,9 @@ export ALICLOUD_REGION="cn-hangzhou"
 export ACR_NAMESPACE="infracast"
 export KUBECONFIG="/path/to/kubeconfig"
 export ACK_CLUSTER_ID="your-cluster-id"
+export ENCORE_APP_ROOT="$(pwd)/e2e/testapp"
 
-E2E_FULL=1 go test ./e2e/... -v -run TestFullE2EDeployment
+E2E_FULL=1 go test ./e2e/... -v -run TestFullE2EDeployment -count=1
 ```
 
 **Requirements:**
@@ -72,3 +73,11 @@ For CI/CD pipelines, use the smoke test mode:
 ```
 
 Full E2E tests should be run manually or in dedicated integration environments.
+
+## Regression Command (Single-Cloud Mini Sprint)
+
+```bash
+set -a; source .env; set +a
+export ENCORE_APP_ROOT="$(pwd)/e2e/testapp"
+E2E_FULL=1 go test ./e2e/... -v -run TestFullE2EDeployment -count=1
+```

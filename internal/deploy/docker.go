@@ -4,11 +4,14 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/cr"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -57,8 +60,13 @@ func NewACRClientWithTimeout(region, accessKeyID, accessKeySecret, namespace str
 func (a *ACRClient) PushImage(ctx context.Context, localImage, tag string) (string, error) {
 	// ACR repository URL format: registry.cn-{region}.aliyuncs.com/{namespace}/{repo}:{tag}
 	repo := extractRepoName(localImage)
-	acrImage := fmt.Sprintf("registry.%s.aliyuncs.com/%s/%s:%s",
-		getACREndpoint(a.region), a.namespace, repo, tag)
+	registryHost := strings.TrimSpace(os.Getenv("ACR_REGISTRY"))
+	if registryHost == "" {
+		registryHost = fmt.Sprintf("registry.%s.aliyuncs.com", getACREndpoint(a.region))
+	}
+	registryHost = strings.TrimPrefix(registryHost, "https://")
+	registryHost = strings.TrimPrefix(registryHost, "http://")
+	acrImage := fmt.Sprintf("%s/%s/%s:%s", registryHost, a.namespace, repo, tag)
 
 	// Retry logic: 3 attempts with exponential backoff
 	var lastErr error
@@ -99,10 +107,14 @@ func (a *ACRClient) pushWithSDK(ctx context.Context, localImage, acrImage string
 		return fmt.Errorf("EDEPLOY044: failed to parse destination image: %w", err)
 	}
 
-	// Pull source image
-	srcImg, err := remote.Image(srcRef, remote.WithContext(ctx))
+	// Load source image from local Docker daemon first (encore build docker output),
+	// then fallback to pulling from remote registry.
+	srcImg, err := daemon.Image(srcRef)
 	if err != nil {
-		return fmt.Errorf("EDEPLOY045: failed to pull source image: %w", err)
+		srcImg, err = remote.Image(srcRef, remote.WithContext(ctx))
+		if err != nil {
+			return fmt.Errorf("EDEPLOY045: failed to load source image from daemon or registry: %w", err)
+		}
 	}
 
 	// Get ACR authentication token
@@ -123,8 +135,17 @@ func (a *ACRClient) pushWithSDK(ctx context.Context, localImage, acrImage string
 // For ACR Personal Edition, the access key ID is used as username and 
 // access key secret as password
 func (a *ACRClient) getACRAuth(ctx context.Context) (authn.Authenticator, error) {
+	username := strings.TrimSpace(os.Getenv("ACR_USERNAME"))
+	password := strings.TrimSpace(os.Getenv("ACR_PASSWORD"))
+	if username != "" && password != "" {
+		return authn.FromConfig(authn.AuthConfig{
+			Username: username,
+			Password: password,
+		}), nil
+	}
+
 	if a.accessKeyID == "" || a.accessKeySecret == "" {
-		return nil, fmt.Errorf("ACR credentials not initialized")
+		return nil, fmt.Errorf("ACR credentials not initialized (set AK/SK or ACR_USERNAME/ACR_PASSWORD)")
 	}
 	
 	// ACR Personal Edition authentication uses access key as credentials

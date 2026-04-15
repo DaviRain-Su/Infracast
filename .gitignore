@@ -49,3 +49,6 @@ terraform.plan
 tmp/
 temp/
 *.tmp
+
+# E2E runtime artifacts
+e2e/infracfg.json

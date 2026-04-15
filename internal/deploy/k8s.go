@@ -110,7 +110,7 @@ spec:
         ports:
         - containerPort: %d
         env:
-        %s
+%s
         envFrom:
         - configMapRef:
             name: %s-config
@@ -172,7 +172,7 @@ metadata:
   namespace: %s
 data:
   infracfg.json: |
-    %s
+%s
 `,
 			cfg.AppName,
 			k.namespace,
@@ -193,6 +193,11 @@ func (k *K8sClient) Apply(ctx context.Context, resources *K8sResources) error {
 		return fmt.Errorf("EDEPLOY010: deployment manifest is empty")
 	}
 
+	// Ensure target namespace exists before applying resources.
+	if err := k.ensureNamespace(ctx); err != nil {
+		return fmt.Errorf("EDEPLOY010: failed to ensure namespace: %w", err)
+	}
+
 	// Apply ConfigMap first
 	if resources.ConfigMap != "" {
 		if err := k.applyConfigMap(ctx, resources.ConfigMap); err != nil {
@@ -210,6 +215,27 @@ func (k *K8sClient) Apply(ctx context.Context, resources *K8sResources) error {
 		return fmt.Errorf("EDEPLOY015: failed to apply Service: %w", err)
 	}
 
+	return nil
+}
+
+func (k *K8sClient) ensureNamespace(ctx context.Context) error {
+	if k.namespace == "" {
+		return fmt.Errorf("namespace is empty")
+	}
+
+	_, err := k.clientset.CoreV1().Namespaces().Get(ctx, k.namespace, metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: k.namespace,
+		},
+	}
+	if _, createErr := k.clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); createErr != nil {
+		return createErr
+	}
 	return nil
 }
 
@@ -333,6 +359,9 @@ func (k *K8sClient) RollbackUndo(ctx context.Context, deploymentName string) err
 
 	// Trigger rollback by updating to previous revision
 	// This is a simplified implementation - in production, use DeploymentRollback
+	if deployment.Spec.Template.Annotations == nil {
+		deployment.Spec.Template.Annotations = map[string]string{}
+	}
 	deployment.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
 
 	_, err = k.clientset.AppsV1().Deployments(k.namespace).Update(ctx, deployment, metav1.UpdateOptions{})
@@ -351,8 +380,8 @@ func (k *K8sClient) generateEnvVars(envVars map[string]string) string {
 
 	var result strings.Builder
 	for key, value := range envVars {
-		result.WriteString(fmt.Sprintf("        - name: %s\n", key))
-		result.WriteString(fmt.Sprintf("          value: %q\n", value))
+		result.WriteString(fmt.Sprintf("          - name: %s\n", key))
+		result.WriteString(fmt.Sprintf("            value: %q\n", value))
 	}
 	return result.String()
 }
