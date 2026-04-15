@@ -164,6 +164,8 @@ infracast status --env dev
 
 ## Common Errors & Next Steps
 
+For the full error code reference, see the [Error Code Matrix](error-code-matrix.md).
+
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `ECFG001: failed to load config` | Missing or invalid `infracast.yaml` | Run `infracast init` or check YAML syntax |
