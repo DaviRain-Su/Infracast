@@ -109,3 +109,24 @@ func TestEnvDeleteCommandFlags(t *testing.T) {
 	assert.NotNil(t, forceFlag)
 	assert.Equal(t, "false", forceFlag.DefValue)
 }
+
+// TestSetDefaultEnvironmentCreatesDir validates .infra/ dir is created (F5)
+func TestSetDefaultEnvironmentCreatesDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	err := setDefaultEnvironment("dev")
+	assert.NoError(t, err)
+
+	// Verify .infra/ was created
+	info, err := os.Stat(".infra")
+	assert.NoError(t, err)
+	assert.True(t, info.IsDir())
+
+	// Verify default-env file content
+	content, err := os.ReadFile(".infra/default-env")
+	assert.NoError(t, err)
+	assert.Equal(t, "dev", string(content))
+}

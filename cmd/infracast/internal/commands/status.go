@@ -45,6 +45,7 @@ func runStatus(env string) error {
 	if err != nil {
 		return fmt.Errorf("ESTATE001: failed to open state database: %w", err)
 	}
+	defer store.Close()
 
 	ctx := context.Background()
 

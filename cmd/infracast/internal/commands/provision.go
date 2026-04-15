@@ -3,8 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/fatih/color"
@@ -74,8 +72,8 @@ func runProvision(env, cfgPath string, dryRun bool) error {
 	}
 
 	// Load credentials from environment
-	accessKey := envAnyProvision("ALICLOUD_ACCESS_KEY", "ALICLOUD_ACCESS_KEY_ID")
-	secretKey := envAnyProvision("ALICLOUD_SECRET_KEY", "ALICLOUD_ACCESS_KEY_SECRET")
+	accessKey := envAny("ALICLOUD_ACCESS_KEY", "ALICLOUD_ACCESS_KEY_ID")
+	secretKey := envAny("ALICLOUD_SECRET_KEY", "ALICLOUD_ACCESS_KEY_SECRET")
 	if accessKey == "" || secretKey == "" {
 		return fmt.Errorf("EPROV001: missing credentials — set ALICLOUD_ACCESS_KEY and ALICLOUD_SECRET_KEY environment variables")
 	}
@@ -85,6 +83,7 @@ func runProvision(env, cfgPath string, dryRun bool) error {
 	if err != nil {
 		return fmt.Errorf("ESTATE001: failed to open state database: %w", err)
 	}
+	defer store.Close()
 
 	// Setup credentials manager
 	credsMgr := credentials.NewManager()
@@ -174,14 +173,4 @@ func runProvision(env, cfgPath string, dryRun bool) error {
 	}
 
 	return err
-}
-
-// envAnyProvision reads the first non-empty env var from the list
-func envAnyProvision(keys ...string) string {
-	for _, k := range keys {
-		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
-			return v
-		}
-	}
-	return ""
 }

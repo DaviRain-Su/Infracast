@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/briandowns/spinner"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
@@ -85,13 +84,6 @@ type DeployOptions struct {
 	DryRun     bool
 }
 
-// DeployStep represents a deployment step
-type DeployStep struct {
-	Name        string
-	Description string
-	Run         func(ctx context.Context) error
-}
-
 // runDeploy executes the deployment workflow
 func runDeploy(opts DeployOptions) error {
 	// Setup context with cancellation
@@ -126,9 +118,6 @@ func runDeploy(opts DeployOptions) error {
 		return runDryRun(config)
 	}
 
-	// Execute deployment steps
-	steps := buildDeploySteps(opts, config)
-
 	// Open audit store for logging
 	auditStore, auditDB := openAuditStore()
 	if auditDB != nil {
@@ -140,11 +129,8 @@ func runDeploy(opts DeployOptions) error {
 		fmt.Printf("Trace ID: %s\n\n", traceID)
 	}
 
-	if opts.Verbose {
-		return runDeployVerbose(ctx, steps, auditStore, traceID, opts.Env)
-	}
-
-	return runDeployWithProgress(ctx, steps, auditStore, traceID, opts.Env)
+	// Execute the pipeline once (was: 4 redundant full-pipeline calls)
+	return runDeployPipeline(ctx, opts, config, auditStore, traceID)
 }
 
 // printDeployBanner prints the deployment banner
@@ -156,132 +142,12 @@ func printDeployBanner(opts DeployOptions) {
 	fmt.Println()
 }
 
-// buildDeploySteps builds the deployment steps based on options
-func buildDeploySteps(opts DeployOptions, config *DeployConfig) []DeployStep {
-	var steps []DeployStep
-
-	if !opts.SkipBuild {
-		steps = append(steps, DeployStep{
-			Name:        "build",
-			Description: "Building Docker image",
-			Run:         func(ctx context.Context) error { return runBuildStep(ctx, config) },
-		})
-	}
-
-	steps = append(steps,
-		DeployStep{
-			Name:        "push",
-			Description: "Pushing image to registry",
-			Run:         func(ctx context.Context) error { return runPushStep(ctx, config) },
-		},
-		DeployStep{
-			Name:        "provision",
-			Description: "Provisioning infrastructure",
-			Run:         func(ctx context.Context) error { return runProvisionStep(ctx, config) },
-		},
-		DeployStep{
-			Name:        "deploy",
-			Description: "Deploying to Kubernetes",
-			Run:         func(ctx context.Context) error { return runK8sDeployStep(ctx, config) },
-		},
-	)
-
-	if !opts.SkipVerify {
-		steps = append(steps, DeployStep{
-			Name:        "verify",
-			Description: "Verifying deployment health",
-			Run:         func(ctx context.Context) error { return runVerifyStep(ctx, config) },
-		})
-	}
-
-	return steps
-}
-
 // stepResult tracks the outcome of a single deploy step
 type stepResult struct {
 	Name     string
 	Ok       bool
 	Duration time.Duration
 	Err      error
-}
-
-// runDeployVerbose runs deployment with verbose output
-func runDeployVerbose(ctx context.Context, steps []DeployStep, audit *state.AuditStore, traceID, env string) error {
-	results := make([]stepResult, 0, len(steps))
-	deployStart := time.Now()
-
-	for i, step := range steps {
-		fmt.Printf("[%d/%d] %s...\n", i+1, len(steps), step.Description)
-
-		stepStart := time.Now()
-		err := step.Run(ctx)
-		elapsed := time.Since(stepStart)
-
-		if err != nil {
-			results = append(results, stepResult{Name: step.Name, Ok: false, Duration: elapsed, Err: err})
-			color.Red("✗ %s failed", step.Name)
-			printErrorHint(err)
-			fmt.Printf("  Error: %v\n", err)
-			logAuditStep(audit, ctx, traceID, env, step.Name, "fail", elapsed, err)
-			printDeploySummary(results, time.Since(deployStart))
-			return fmt.Errorf("step %s failed: %w", step.Name, err)
-		}
-
-		results = append(results, stepResult{Name: step.Name, Ok: true, Duration: elapsed})
-		logAuditStep(audit, ctx, traceID, env, step.Name, "ok", elapsed, nil)
-		color.Green("✓ %s completed", step.Name)
-		fmt.Println()
-	}
-
-	printDeploySummary(results, time.Since(deployStart))
-	printDeploySuccess()
-	return nil
-}
-
-// runDeployWithProgress runs deployment with spinner progress
-func runDeployWithProgress(ctx context.Context, steps []DeployStep, audit *state.AuditStore, traceID, env string) error {
-	results := make([]stepResult, 0, len(steps))
-	deployStart := time.Now()
-
-	for i, step := range steps {
-		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-		s.Prefix = fmt.Sprintf("[%d/%d] %s ", i+1, len(steps), step.Description)
-		s.Start()
-
-		stepStart := time.Now()
-		stepDone := make(chan error, 1)
-		go func() {
-			stepDone <- step.Run(ctx)
-		}()
-
-		select {
-		case err := <-stepDone:
-			s.Stop()
-			elapsed := time.Since(stepStart)
-			if err != nil {
-				results = append(results, stepResult{Name: step.Name, Ok: false, Duration: elapsed, Err: err})
-				color.Red("✗ %s", step.Description)
-				printErrorHint(err)
-				fmt.Printf("  Error: %v\n", err)
-				logAuditStep(audit, ctx, traceID, env, step.Name, "fail", elapsed, err)
-				printDeploySummary(results, time.Since(deployStart))
-				return fmt.Errorf("step %s failed: %w", step.Name, err)
-			}
-			results = append(results, stepResult{Name: step.Name, Ok: true, Duration: elapsed})
-			logAuditStep(audit, ctx, traceID, env, step.Name, "ok", elapsed, nil)
-			color.Green("✓ %s", step.Description)
-
-		case <-ctx.Done():
-			s.Stop()
-			color.Yellow("⚠ %s cancelled", step.Description)
-			return fmt.Errorf("deployment cancelled")
-		}
-	}
-
-	fmt.Println()
-	printDeploySummary(results, time.Since(deployStart))
-	printDeploySuccess()
-	return nil
 }
 
 // runDryRun shows what would be deployed
@@ -346,6 +212,7 @@ func validateEnvironment(env string) error {
 	// Check state store for user-created environments
 	store, err := state.NewStore(defaultDBPath())
 	if err == nil {
+		defer store.Close()
 		ctx := context.Background()
 		envs, err := store.ListEnvironments(ctx)
 		if err == nil {
@@ -417,89 +284,40 @@ func loadDeployConfig(env string) (*DeployConfig, error) {
 	}, nil
 }
 
-// Deployment step implementations
-// These delegate to the real deploy pipeline in internal/deploy
-
-func runBuildStep(ctx context.Context, cfg *DeployConfig) error {
-	pipeline := deploy.NewPipeline(false)
+// runDeployPipeline executes the deploy pipeline once and reports per-step results.
+// Before v0.1.4, each CLI step ran the full 7-step pipeline independently (4x redundancy).
+func runDeployPipeline(ctx context.Context, opts DeployOptions, cfg *DeployConfig, audit *state.AuditStore, traceID string) error {
+	pipeline := deploy.NewPipeline(opts.Verbose)
 	input := buildPipelineInput(cfg)
-	result := pipeline.Execute(ctx, input)
-	if !result.Success {
-		// Find the build step result
-		for _, s := range result.Steps {
-			if s.Name == "build" && !s.Success {
-				return s.Error
-			}
-		}
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	return nil
-}
 
-func runPushStep(ctx context.Context, cfg *DeployConfig) error {
-	// Push requires ACR credentials — check availability
-	accessKey := os.Getenv("ALICLOUD_ACCESS_KEY")
-	if accessKey == "" {
-		accessKey = os.Getenv("ALICLOUD_ACCESS_KEY_ID")
-	}
-	if accessKey == "" {
-		return fmt.Errorf("EDEPLOY002: missing ALICLOUD_ACCESS_KEY for registry push")
-	}
-	// Delegate to pipeline
-	pipeline := deploy.NewPipeline(false)
-	input := buildPipelineInput(cfg)
 	result := pipeline.Execute(ctx, input)
-	if !result.Success {
-		for _, s := range result.Steps {
-			if s.Name == "push" && !s.Success {
-				return s.Error
+
+	// Map pipeline step results to CLI display
+	var results []stepResult
+	for _, s := range result.Steps {
+		sr := stepResult{Name: s.Name, Ok: s.Success, Duration: s.Duration, Err: s.Error}
+		results = append(results, sr)
+
+		if s.Success {
+			logAuditStep(audit, ctx, traceID, opts.Env, s.Name, "ok", s.Duration, nil)
+			color.Green("✓ %s (%s)", s.Name, s.Duration.Round(time.Millisecond))
+		} else {
+			logAuditStep(audit, ctx, traceID, opts.Env, s.Name, "fail", s.Duration, s.Error)
+			color.Red("✗ %s failed", s.Name)
+			if s.Error != nil {
+				printErrorHint(s.Error)
+				fmt.Printf("  Error: %v\n", s.Error)
 			}
-		}
-		if result.Error != nil {
-			return result.Error
+			printDeploySummary(results, result.Duration)
+			return fmt.Errorf("step %s failed: %w", s.Name, s.Error)
 		}
 	}
-	return nil
-}
 
-func runProvisionStep(ctx context.Context, cfg *DeployConfig) error {
-	return runProvision(cfg.Environment, "", false)
-}
-
-func runK8sDeployStep(ctx context.Context, cfg *DeployConfig) error {
-	pipeline := deploy.NewPipeline(false)
-	input := buildPipelineInput(cfg)
-	result := pipeline.Execute(ctx, input)
-	if !result.Success {
-		for _, s := range result.Steps {
-			if s.Name == "deploy" && !s.Success {
-				return s.Error
-			}
-		}
-		if result.Error != nil {
-			return result.Error
-		}
+	printDeploySummary(results, result.Duration)
+	if result.Success {
+		printDeploySuccess()
 	}
-	return nil
-}
-
-func runVerifyStep(ctx context.Context, cfg *DeployConfig) error {
-	pipeline := deploy.NewPipeline(false)
-	input := buildPipelineInput(cfg)
-	result := pipeline.Execute(ctx, input)
-	if !result.Success {
-		for _, s := range result.Steps {
-			if s.Name == "verify" && !s.Success {
-				return s.Error
-			}
-		}
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-	return nil
+	return result.Error
 }
 
 // buildPipelineInput converts DeployConfig to PipelineInput

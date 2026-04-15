@@ -119,3 +119,28 @@ func TestDestroyKeepVPCDefault(t *testing.T) {
 	assert.NotNil(t, f)
 	assert.Equal(t, "1", f.DefValue, "keep-vpc should default to 1 to preserve VPC")
 }
+
+// TestDestroyErrorCodesStructured validates destroy uses structured EDESTROY error codes
+func TestDestroyErrorCodesStructured(t *testing.T) {
+	cmd := newDestroyCommand()
+
+	// Execute with empty --env to trigger EDESTROY001
+	cmd.SetArgs([]string{"--env", ""})
+	err := cmd.Execute()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EDESTROY001")
+}
+
+// TestDestroyCredentialErrorCode validates missing credentials returns EDESTROY003
+func TestDestroyCredentialErrorCode(t *testing.T) {
+	os.Unsetenv("ALICLOUD_ACCESS_KEY")
+	os.Unsetenv("ALICLOUD_ACCESS_KEY_ID")
+	os.Unsetenv("ALICLOUD_SECRET_KEY")
+	os.Unsetenv("ALICLOUD_ACCESS_KEY_SECRET")
+
+	cmd := newDestroyCommand()
+	cmd.SetArgs([]string{"--env", "dev", "--apply"})
+	err := cmd.Execute()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "EDESTROY003")
+}

@@ -30,7 +30,7 @@ func newDestroyCommand() *cobra.Command {
 		Long:  "Destroy all infrastructure resources for the specified environment",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if env == "" {
-				return fmt.Errorf("--env is required")
+				return fmt.Errorf("EDESTROY001: --env is required")
 			}
 
 			// Safety: only --apply performs deletion. Otherwise force dry-run.
@@ -45,18 +45,18 @@ func newDestroyCommand() *cobra.Command {
 
 			// Safety guard: broad prefix delete requires explicit force.
 			if apply && !force && (resourcePrefix == "infracast" || resourcePrefix == "infra") {
-				return fmt.Errorf("refusing broad prefix delete for prefix=%q without --force", resourcePrefix)
+				return fmt.Errorf("EDESTROY002: refusing broad prefix delete for prefix=%q without --force", resourcePrefix)
 			}
 
 			accessKey := envAny("ALICLOUD_ACCESS_KEY", "ALICLOUD_ACCESS_KEY_ID")
 			secretKey := envAny("ALICLOUD_SECRET_KEY", "ALICLOUD_ACCESS_KEY_SECRET")
 			if accessKey == "" || secretKey == "" {
-				return fmt.Errorf("missing credentials: set ALICLOUD_ACCESS_KEY and ALICLOUD_SECRET_KEY")
+				return fmt.Errorf("EDESTROY003: missing credentials — set ALICLOUD_ACCESS_KEY and ALICLOUD_SECRET_KEY")
 			}
 
 			provider, err := alicloud.NewProvider(region, accessKey, secretKey)
 			if err != nil {
-				return fmt.Errorf("create alicloud provider: %w", err)
+				return fmt.Errorf("EDESTROY004: create alicloud provider: %w", err)
 			}
 
 			mode := "DRY-RUN"
@@ -87,7 +87,7 @@ func newDestroyCommand() *cobra.Command {
 				return err
 			}
 			if result != nil && len(result.Failed) > 0 {
-				return fmt.Errorf("destroy completed with %d failed resources", len(result.Failed))
+				return fmt.Errorf("EDESTROY005: destroy completed with %d failed resources", len(result.Failed))
 			}
 			return nil
 		},

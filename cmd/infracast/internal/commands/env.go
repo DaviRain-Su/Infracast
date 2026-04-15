@@ -337,6 +337,7 @@ func loadEnvironments() ([]Environment, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer store.Close()
 
 	ctx := context.Background()
 	envNames, err := store.ListEnvironments(ctx)
@@ -346,7 +347,10 @@ func loadEnvironments() ([]Environment, error) {
 
 	var envs []Environment
 	for _, name := range envNames {
-		resources, _ := store.ListResourcesByEnv(ctx, name)
+		resources, err := store.ListResourcesByEnv(ctx, name)
+		if err != nil {
+			return nil, fmt.Errorf("listing resources for %s: %w", name, err)
+		}
 		env := Environment{
 			Name:     name,
 			Provider: "alicloud",
@@ -406,6 +410,7 @@ func saveEnvironment(env Environment) error {
 	if err != nil {
 		return err
 	}
+	defer store.Close()
 
 	ctx := context.Background()
 	// Create a placeholder resource to register the environment in state
@@ -423,6 +428,7 @@ func deleteEnvironment(name string) error {
 	if err != nil {
 		return err
 	}
+	defer store.Close()
 
 	ctx := context.Background()
 	// Delete the env meta resource
@@ -430,6 +436,10 @@ func deleteEnvironment(name string) error {
 }
 
 func setDefaultEnvironment(name string) error {
+	// Ensure .infra/ directory exists
+	if err := os.MkdirAll(".infra", 0755); err != nil {
+		return fmt.Errorf("creating .infra directory: %w", err)
+	}
 	// Write default env to a local config file
 	return os.WriteFile(".infra/default-env", []byte(name), 0644)
 }
