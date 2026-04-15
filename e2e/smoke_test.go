@@ -145,11 +145,12 @@ func TestSmokePipeline(t *testing.T) {
 	t.Run("Error_Codes_Exist_In_Source", func(t *testing.T) {
 		// Read the actual source files to verify error codes exist
 		sourceFiles := []string{
-			"internal/deploy/docker.go",
-			"internal/deploy/k8s.go", 
-			"internal/deploy/health.go",
-			"internal/deploy/pipeline.go",
-			"internal/infragen/generator.go",
+			"../internal/deploy/build.go",
+			"../internal/deploy/docker.go",
+			"../internal/deploy/k8s.go",
+			"../internal/deploy/health.go",
+			"../internal/deploy/pipeline.go",
+			"../internal/infragen/generator.go",
 		}
 
 		expectedCodes := []string{
