@@ -814,6 +814,56 @@ func TestProvision_RetryableErrorsUnchanged(t *testing.T) {
 	assert.Equal(t, 0, result.Summary.Total)
 }
 
+// TestApply_PersistsEndpointInConfigJSON validates that endpoint output is stored in state (v0.1.5 F1)
+func TestApply_PersistsEndpointInConfigJSON(t *testing.T) {
+	prov, store, ctx := setupTestProvisioner(t)
+
+	plan := &PlanResult{
+		Resources: []ResourcePlan{
+			{
+				Action: "create",
+				Spec: providers.ResourceSpec{
+					Type: "database",
+					DatabaseSpec: &providers.DatabaseSpec{
+						Name:      "mydb",
+						Engine:    "postgresql",
+						StorageGB: 20,
+					},
+				},
+				NewHash: "hash123",
+			},
+			{
+				Action: "create",
+				Spec: providers.ResourceSpec{
+					Type: "cache",
+					CacheSpec: &providers.CacheSpec{
+						Name:     "mycache",
+						Engine:   "redis",
+						MemoryMB: 256,
+					},
+				},
+				NewHash: "hash456",
+			},
+		},
+	}
+
+	result, err := prov.Apply(ctx, "env-endpoint", plan)
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+
+	// Verify database endpoint persisted in ConfigJSON
+	dbResource, err := store.GetResource(ctx, "env-endpoint", "mydb")
+	require.NoError(t, err)
+	assert.NotEmpty(t, dbResource.ConfigJSON, "ConfigJSON should contain endpoint output")
+	assert.Contains(t, dbResource.ConfigJSON, "db.example.com")
+
+	// Verify cache endpoint persisted in ConfigJSON
+	cacheResource, err := store.GetResource(ctx, "env-endpoint", "mycache")
+	require.NoError(t, err)
+	assert.NotEmpty(t, cacheResource.ConfigJSON, "ConfigJSON should contain endpoint output")
+	assert.Contains(t, cacheResource.ConfigJSON, "cache.example.com")
+}
+
 // TestCalculateSummary validates the calculateSummary helper function (B1-R1)
 func TestCalculateSummary(t *testing.T) {
 	prov, _, _ := setupTestProvisioner(t)

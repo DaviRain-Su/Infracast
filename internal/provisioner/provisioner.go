@@ -3,6 +3,7 @@ package provisioner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -425,8 +426,13 @@ func (p *Provisioner) applyResource(ctx context.Context, envID string, plan Reso
 		return result
 	}
 
-	// Update resource status to provisioned
+	// Update resource status to provisioned, persist endpoint output
 	resource.Status = string(ResourceStateProvisioned)
+	if output != nil {
+		if outputJSON, err := json.Marshal(output); err == nil {
+			resource.ConfigJSON = string(outputJSON)
+		}
+	}
 	if err := p.store.UpsertResource(ctx, resource); err != nil {
 		result.Success = false
 		result.ErrorMsg = fmt.Sprintf("%s: failed to update final state: %v", ErrConcurrencyConflict, err)

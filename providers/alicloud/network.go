@@ -396,9 +396,9 @@ func networkVSwitchName(region string) string {
 
 // waitForVPCAvailable polls until the VPC status becomes "Available"
 func (p *Provider) waitForVPCAvailable(vpcID string) error {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(VPCPollInterval)
 	defer ticker.Stop()
-	timeout := time.After(2 * time.Minute)
+	timeout := time.After(VPCPollTimeout)
 
 	for {
 		select {

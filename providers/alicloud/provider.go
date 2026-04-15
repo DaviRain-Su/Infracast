@@ -21,6 +21,18 @@ import (
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 )
 
+// Polling timeouts and intervals for resource readiness checks.
+const (
+	// ProvisionPollTimeout is the maximum time to wait for a resource to become ready.
+	ProvisionPollTimeout = 10 * time.Minute
+	// ProvisionPollInterval is the interval between readiness checks.
+	ProvisionPollInterval = 30 * time.Second
+	// VPCPollTimeout is the maximum time to wait for a VPC to become available.
+	VPCPollTimeout = 2 * time.Minute
+	// VPCPollInterval is the interval between VPC readiness checks.
+	VPCPollInterval = 5 * time.Second
+)
+
 // Provider implements CloudProviderInterface for Aliyun Cloud
 type Provider struct {
 	region          string
@@ -403,11 +415,10 @@ func (p *Provider) DashboardURL(envID string) string {
 
 // waitForDBInstanceReady polls until the RDS instance is ready and returns the endpoint
 func (p *Provider) waitForDBInstanceReady(ctx context.Context, instanceID string) (string, error) {
-	// Poll for up to 10 minutes (RDS creation takes time)
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(ProvisionPollInterval)
 	defer ticker.Stop()
 
-	timeout := time.After(10 * time.Minute)
+	timeout := time.After(ProvisionPollTimeout)
 
 	for {
 		select {
@@ -615,11 +626,10 @@ func secureShuffle(data []byte) {
 
 // waitForCacheInstanceReady polls until the Redis instance is ready and returns the endpoint
 func (p *Provider) waitForCacheInstanceReady(ctx context.Context, instanceID string) (string, error) {
-	// Poll for up to 10 minutes (Redis creation takes time)
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(ProvisionPollInterval)
 	defer ticker.Stop()
 
-	timeout := time.After(10 * time.Minute)
+	timeout := time.After(ProvisionPollTimeout)
 
 	for {
 		select {

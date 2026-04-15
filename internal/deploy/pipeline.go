@@ -368,7 +368,9 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 			if err != nil {
 				return fmt.Errorf("EDEPLOY075: failed to provision database %s: %w", spec.DatabaseSpec.Name, err)
 			}
-			// TODO: Poll for endpoint if empty, set password
+			if dbOutput.Endpoint == "" {
+				return fmt.Errorf("EDEPLOY076: database %s provisioned but endpoint is empty — resource may still be initializing", spec.DatabaseSpec.Name)
+			}
 			output = infragen.ResourceOutput{
 				Type: "sql_server",
 				Name: spec.DatabaseSpec.Name,
@@ -389,7 +391,9 @@ func (p *Pipeline) stepProvision(ctx context.Context, input *PipelineInput) erro
 			if err != nil {
 				return fmt.Errorf("EDEPLOY075: failed to provision cache %s: %w", spec.CacheSpec.Name, err)
 			}
-			// TODO: Poll for endpoint if empty
+			if cacheOutput.Endpoint == "" {
+				return fmt.Errorf("EDEPLOY076: cache %s provisioned but endpoint is empty — resource may still be initializing", spec.CacheSpec.Name)
+			}
 			output = infragen.ResourceOutput{
 				Type: "redis",
 				Name: spec.CacheSpec.Name,

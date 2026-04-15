@@ -3,6 +3,7 @@ package alicloud
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/DaviRain-Su/infracast/providers"
 	"github.com/stretchr/testify/assert"
@@ -166,6 +167,21 @@ func TestProvider_ensureNetwork_EmptyRegion(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "", vpcID)
 	assert.Equal(t, "", vswID)
+}
+
+// TestProvisionPollConstants validates polling timeout/interval constants (v0.1.5)
+func TestProvisionPollConstants(t *testing.T) {
+	// Provision polling: 10min timeout, 30s interval
+	assert.Equal(t, 10*time.Minute, ProvisionPollTimeout)
+	assert.Equal(t, 30*time.Second, ProvisionPollInterval)
+
+	// VPC polling: 2min timeout, 5s interval
+	assert.Equal(t, 2*time.Minute, VPCPollTimeout)
+	assert.Equal(t, 5*time.Second, VPCPollInterval)
+
+	// Sanity: interval must be less than timeout
+	assert.Less(t, ProvisionPollInterval, ProvisionPollTimeout)
+	assert.Less(t, VPCPollInterval, VPCPollTimeout)
 }
 
 func TestAlicloudInitRegistersProvider(t *testing.T) {
