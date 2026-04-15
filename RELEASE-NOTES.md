@@ -1,9 +1,40 @@
-# Release Notes: v0.1.4
+# Release Notes: v0.1.5
 
 **Date**: 2026-04-15
 **Status**: Patch Release (single-cloud, Alicloud only)
 
 ---
+
+## What's New in v0.1.5
+
+### Stabilization (#151)
+
+- **Provisioning polling constants**: `ProvisionPollTimeout` (10m), `ProvisionPollInterval` (30s), `VPCPollTimeout` (2m), `VPCPollInterval` (5s) replace magic numbers in alicloud provider
+- **Empty endpoint validation**: `EDEPLOY076` error raised when database or cache endpoint is empty after provisioning — catches resources still initializing
+- **ConfigJSON persistence**: Provisioner writes resource output as JSON to state store after successful apply
+
+### Deploy Chain Improvements (#152)
+
+- **`app` config field**: `infracast.yaml` now supports `app: <name>` to set the application name; `Config.AppName()` provides fallback to `"my-app"`
+- **BuildMeta passthrough**: `stepGenerateConfig` uses full `BuildResult.BuildMeta` (AppName, Services, Databases, Caches, BuildImage) instead of bare AppName fallback
+- **BuildImage populated**: `Build()` assigns parsed image tag to `BuildMeta.BuildImage`
+- **Rollback audit logging**: Health check failures that trigger rollback are logged to audit store with `AuditActionRollback` and success/failure status; rollback failures get additional `AuditLevelError` entry
+
+### Regression Tests Added
+
+- `TestConfig_AppName` (3 sub-tests) — App field reading, empty fallback, YAML loading
+- `TestExtractBuildMeta_BuildImagePopulated` — BuildImage assignment chain
+- `TestStepGenerateConfig_UsesBuildResultMeta` — BuildResult.BuildMeta preferred over fallback
+- `TestPipeline_SetAuditStore` — audit store injection
+- `TestProvisionPollConstants` — polling constant values
+- `TestApply_PersistsEndpointInConfigJSON` — ConfigJSON state persistence
+
+---
+
+## Previous Release: v0.1.4
+
+**Date**: 2026-04-15
+**Status**: Patch Release (single-cloud, Alicloud only)
 
 ## What's Fixed in v0.1.4
 

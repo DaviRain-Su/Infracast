@@ -4,6 +4,23 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.1.5] — 2026-04-15
+
+### Fixed
+
+- **Hardcoded AppName (P1)**: `deploy` and `provision` commands now read `app` field from `infracast.yaml` via `Config.AppName()` instead of hardcoded `"my-app"`
+- **BuildMeta not passed to config generation (P1)**: `stepGenerateConfig` now uses `BuildResult.BuildMeta` (with services, databases, caches) instead of a bare `AppName`-only fallback
+- **BuildImage missing from BuildMeta (P2)**: `Build()` now populates `BuildMeta.BuildImage` with the parsed image tag from encore build output
+- **Empty endpoint after provision (P1)**: Added `EDEPLOY076` validation — database and cache endpoints are checked for empty string after provisioning (catches resources still initializing)
+
+### Added
+
+- **`app` config field**: `infracast.yaml` now supports `app: <name>` to set the application name (fallback: `"my-app"`)
+- **Rollback audit logging**: Health check failures that trigger rollback are now logged to the audit store with `AuditActionRollback` and success/failure status
+- **Provisioning polling constants**: `ProvisionPollTimeout`, `ProvisionPollInterval`, `VPCPollTimeout`, `VPCPollInterval` replace magic numbers
+- **ConfigJSON persistence**: Provisioner writes resource output as JSON to state store after successful apply
+- **Regression tests**: `TestConfig_AppName`, `TestExtractBuildMeta_BuildImagePopulated`, `TestStepGenerateConfig_UsesBuildResultMeta`, `TestPipeline_SetAuditStore`, `TestProvisionPollConstants`, `TestApply_PersistsEndpointInConfigJSON`
+
 ## [v0.1.4] — 2026-04-15
 
 ### Fixed
