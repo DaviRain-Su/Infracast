@@ -96,11 +96,23 @@ func (g *Generator) Generate(outputs []ResourceOutput, meta mapper.BuildMeta, en
 	for _, output := range outputs {
 		switch output.Type {
 		case "sql_server", "database":
-			cfg.SQLServers[output.Name] = g.mapSQLServer(output)
+			server := g.mapSQLServer(output)
+			if err := validateSQLServer(server); err != nil {
+				return nil, fmt.Errorf("%s: %s for %s", EIGEN002, err.Error(), output.Name)
+			}
+			cfg.SQLServers[output.Name] = server
 		case "redis", "cache":
-			cfg.Redis[output.Name] = g.mapRedis(output)
+			redis := g.mapRedis(output)
+			if err := validateRedis(redis); err != nil {
+				return nil, fmt.Errorf("%s: %s for %s", EIGEN002, err.Error(), output.Name)
+			}
+			cfg.Redis[output.Name] = redis
 		case "object_storage", "oss":
-			cfg.ObjectStorage[output.Name] = g.mapObjectStore(output)
+			store := g.mapObjectStore(output)
+			if err := validateObjectStore(store); err != nil {
+				return nil, fmt.Errorf("%s: %s for %s", EIGEN002, err.Error(), output.Name)
+			}
+			cfg.ObjectStorage[output.Name] = store
 		default:
 			return nil, fmt.Errorf("%s: unsupported resource type %s", EIGEN001, output.Type)
 		}
@@ -299,4 +311,43 @@ func parseInt(s string, defaultVal int) int {
 		return defaultVal
 	}
 	return result
+}
+
+// validateSQLServer validates that required fields are present
+func validateSQLServer(s SQLServer) error {
+	if s.Host == "" {
+		return fmt.Errorf("host is required")
+	}
+	if s.Port == 0 {
+		return fmt.Errorf("port is required")
+	}
+	if s.User == "" {
+		return fmt.Errorf("user is required")
+	}
+	if s.Password == "" {
+		return fmt.Errorf("password is required")
+	}
+	return nil
+}
+
+// validateRedis validates that required fields are present
+func validateRedis(r RedisServer) error {
+	if r.Host == "" {
+		return fmt.Errorf("host is required")
+	}
+	if r.Port == 0 {
+		return fmt.Errorf("port is required")
+	}
+	return nil
+}
+
+// validateObjectStore validates that required fields are present
+func validateObjectStore(o ObjectStore) error {
+	if o.Endpoint == "" {
+		return fmt.Errorf("endpoint is required")
+	}
+	if o.Bucket == "" {
+		return fmt.Errorf("bucket is required")
+	}
+	return nil
 }
