@@ -22,7 +22,7 @@ type CloudProviderInterface interface {
 	// Lifecycle
 	Plan(ctx context.Context, specs []ResourceSpec) (*PlanResult, error)
 	Apply(ctx context.Context, plan *PlanResult) (*ApplyResult, error)
-	Destroy(ctx context.Context, envID string) error
+	Destroy(ctx context.Context, resourceID string) error
 
 	// Observability
 	OTLPEndpoint() string

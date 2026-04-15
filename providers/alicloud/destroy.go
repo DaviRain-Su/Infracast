@@ -30,6 +30,7 @@ type DestroyResult struct {
 
 // Destroy destroys a single resource by its provider resource ID
 // This implements CloudProviderInterface.Destroy
+// Supports both provider types (RDS/Redis/OSS) and state types (database/cache/object_storage)
 func (p *Provider) Destroy(ctx context.Context, resourceID string) error {
 	// Parse resource type from resourceID (format: "TYPE:ID")
 	parts := strings.SplitN(resourceID, ":", 2)
@@ -39,17 +40,22 @@ func (p *Provider) Destroy(ctx context.Context, resourceID string) error {
 	resType := parts[0]
 	resID := parts[1]
 
+	// Map state types to provider types
 	switch resType {
-	case "RDS":
+	case "RDS", "database":
 		return p.destroySingleRDS(ctx, resID)
-	case "Redis":
+	case "Redis", "cache":
 		return p.destroySingleRedis(ctx, resID)
-	case "OSS":
+	case "OSS", "object_storage":
 		return p.destroySingleOSS(ctx, resID)
 	case "VSwitch":
 		return p.deleteVSwitchWithRetry(ctx, resID)
 	case "VPC":
 		return p.deleteVPCWithRetry(ctx, resID)
+	case "compute":
+		// Compute resources may not need cloud cleanup (handled by K8s)
+		fmt.Printf("[Destroy] Compute resource %s - no cloud cleanup needed\n", resID)
+		return nil
 	default:
 		return fmt.Errorf("unknown resource type: %s", resType)
 	}
@@ -416,22 +422,12 @@ func (p *Provider) destroyOSS(ctx context.Context, prefix string, dryRun bool, r
 	marker := ""
 	for {
 		// List buckets with pagination
-		var buckets []oss.BucketProperties
-		if marker == "" {
-			resp, err := p.ossClient.ListBuckets()
-			if err != nil {
-				return fmt.Errorf("list OSS buckets: %w", err)
-			}
-			buckets = resp.Buckets
-		} else {
-			resp, err := p.ossClient.ListBuckets(oss.Marker(marker))
-			if err != nil {
-				return fmt.Errorf("list OSS buckets: %w", err)
-			}
-			buckets = resp.Buckets
+		resp, err := p.ossClient.ListBuckets(oss.Marker(marker))
+		if err != nil {
+			return fmt.Errorf("list OSS buckets: %w", err)
 		}
 
-		for _, bucket := range buckets {
+		for _, bucket := range resp.Buckets {
 			if !strings.HasPrefix(bucket.Name, prefix) {
 				continue
 			}
@@ -454,8 +450,7 @@ func (p *Provider) destroyOSS(ctx context.Context, prefix string, dryRun bool, r
 			}
 		}
 
-		// Check for more buckets (simplified pagination)
-		resp, _ := p.ossClient.ListBuckets(oss.Marker(marker))
+		// Check for more buckets
 		if !resp.IsTruncated {
 			break
 		}
