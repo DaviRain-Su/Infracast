@@ -149,6 +149,32 @@ notifications:
 - [Task Breakdown](04-task-breakdown.md)
 - [Single-Cloud Operations Handbook](06-single-cloud-operations.md)
 
+## Quick Command Flow
+
+The shortest path from zero to deployed:
+
+```bash
+infracast init my-app --provider alicloud --region cn-hangzhou -y
+cd my-app
+# edit infracast.yaml → uncomment the resources you need
+infracast provision --env dev
+infracast deploy --env dev
+infracast status --env dev
+```
+
+## Common Errors & Next Steps
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `ECFG001: failed to load config` | Missing or invalid `infracast.yaml` | Run `infracast init` or check YAML syntax |
+| `ECFG002: environment not found` | Environment name doesn't exist | Run `infracast env list` to see available envs |
+| `EDEPLOY001: invalid environment` | Typo in `--env` flag | Valid values: `dev`, `staging`, `production`, `local` |
+| `NotEnoughBalance` | Cloud account balance too low for node provisioning | Top up account or use spot instances |
+| `KUBECONFIG` not set | Missing Kubernetes config | `export KUBECONFIG=~/.kube/config` |
+| Docker build fails | Docker daemon not running | Run `docker info` to verify, then `docker start` |
+| Registry push fails | Invalid registry credentials | Re-authenticate: `docker login <registry-url>` |
+| Deploy timeout | Network or cluster issue | Check connectivity; retry with `--verbose` for details |
+
 ## Example Applications
 
 Check out the [examples](../examples/) directory for complete sample applications:

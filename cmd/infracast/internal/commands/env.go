@@ -162,20 +162,20 @@ func runEnvList() error {
 	// Print header
 	fmt.Println()
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ENVIRONMENT\tPROVIDER\tREGION\tDEFAULT\tRESOURCES")
-	fmt.Fprintln(w, "-----------\t--------\t------\t-------\t---------")
+	fmt.Fprintln(w, "CURRENT\tENVIRONMENT\tPROVIDER\tREGION\tRESOURCES")
+	fmt.Fprintln(w, "-------\t-----------\t--------\t------\t---------")
 
 	// Print environments
 	for _, env := range envs {
-		defaultMarker := ""
+		currentMarker := ""
 		if env.Default {
-			defaultMarker = "*"
+			currentMarker = "→"
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n",
+			currentMarker,
 			env.Name,
 			env.Provider,
 			env.Region,
-			defaultMarker,
 			len(env.Resources),
 		)
 	}
@@ -283,6 +283,9 @@ func runEnvUse(name string) error {
 	}
 
 	color.Green("✓ Default environment set to '%s'", name)
+	fmt.Println()
+	fmt.Println("Next command:")
+	fmt.Printf("  infracast deploy          # deploys to %s\n", name)
 	return nil
 }
 

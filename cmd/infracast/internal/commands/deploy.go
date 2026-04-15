@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -180,31 +181,56 @@ func buildDeploySteps(opts DeployOptions, config *DeployConfig) []DeployStep {
 	return steps
 }
 
+// stepResult tracks the outcome of a single deploy step
+type stepResult struct {
+	Name     string
+	Ok       bool
+	Duration time.Duration
+	Err      error
+}
+
 // runDeployVerbose runs deployment with verbose output
 func runDeployVerbose(ctx context.Context, steps []DeployStep) error {
+	results := make([]stepResult, 0, len(steps))
+	deployStart := time.Now()
+
 	for i, step := range steps {
 		fmt.Printf("[%d/%d] %s...\n", i+1, len(steps), step.Description)
 
-		if err := step.Run(ctx); err != nil {
-			color.Red("✗ %s failed: %v", step.Name, err)
+		stepStart := time.Now()
+		err := step.Run(ctx)
+		elapsed := time.Since(stepStart)
+
+		if err != nil {
+			results = append(results, stepResult{Name: step.Name, Ok: false, Duration: elapsed, Err: err})
+			color.Red("✗ %s failed", step.Name)
+			printErrorHint(err)
+			fmt.Printf("  Error: %v\n", err)
+			printDeploySummary(results, time.Since(deployStart))
 			return fmt.Errorf("step %s failed: %w", step.Name, err)
 		}
 
+		results = append(results, stepResult{Name: step.Name, Ok: true, Duration: elapsed})
 		color.Green("✓ %s completed", step.Name)
 		fmt.Println()
 	}
 
+	printDeploySummary(results, time.Since(deployStart))
 	printDeploySuccess()
 	return nil
 }
 
 // runDeployWithProgress runs deployment with spinner progress
 func runDeployWithProgress(ctx context.Context, steps []DeployStep) error {
+	results := make([]stepResult, 0, len(steps))
+	deployStart := time.Now()
+
 	for i, step := range steps {
 		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
 		s.Prefix = fmt.Sprintf("[%d/%d] %s ", i+1, len(steps), step.Description)
 		s.Start()
 
+		stepStart := time.Now()
 		stepDone := make(chan error, 1)
 		go func() {
 			stepDone <- step.Run(ctx)
@@ -213,11 +239,16 @@ func runDeployWithProgress(ctx context.Context, steps []DeployStep) error {
 		select {
 		case err := <-stepDone:
 			s.Stop()
+			elapsed := time.Since(stepStart)
 			if err != nil {
+				results = append(results, stepResult{Name: step.Name, Ok: false, Duration: elapsed, Err: err})
 				color.Red("✗ %s", step.Description)
+				printErrorHint(err)
 				fmt.Printf("  Error: %v\n", err)
+				printDeploySummary(results, time.Since(deployStart))
 				return fmt.Errorf("step %s failed: %w", step.Name, err)
 			}
+			results = append(results, stepResult{Name: step.Name, Ok: true, Duration: elapsed})
 			color.Green("✓ %s", step.Description)
 
 		case <-ctx.Done():
@@ -228,6 +259,7 @@ func runDeployWithProgress(ctx context.Context, steps []DeployStep) error {
 	}
 
 	fmt.Println()
+	printDeploySummary(results, time.Since(deployStart))
 	printDeploySuccess()
 	return nil
 }
@@ -340,4 +372,49 @@ func runVerifyStep(ctx context.Context, config *DeployConfig) error {
 	// TODO: Implement actual verification
 	time.Sleep(100 * time.Millisecond) // Simulate work
 	return nil
+}
+
+// printDeploySummary prints a summary table of all step results
+func printDeploySummary(results []stepResult, total time.Duration) {
+	fmt.Println()
+	fmt.Println("─── Deploy Summary ───")
+	passed, failed := 0, 0
+	for _, r := range results {
+		status := color.GreenString("OK")
+		if !r.Ok {
+			status = color.RedString("FAIL")
+			failed++
+		} else {
+			passed++
+		}
+		fmt.Printf("  [%s] %-30s %s\n", status, r.Name, r.Duration.Round(time.Millisecond))
+	}
+	fmt.Printf("  Total: %d passed, %d failed, %s elapsed\n", passed, failed, total.Round(time.Millisecond))
+	fmt.Println("──────────────────────")
+}
+
+// printErrorHint prints actionable suggestions for known error patterns
+func printErrorHint(err error) {
+	msg := err.Error()
+	hints := []struct {
+		pattern string
+		hint    string
+	}{
+		{"ECFG001", "  Hint: Check that infracast.yaml exists and is valid YAML."},
+		{"ECFG002", "  Hint: Run 'infracast env list' to see available environments."},
+		{"EDEPLOY001", "  Hint: Valid environments are: dev, staging, production, local."},
+		{"KUBECONFIG", "  Hint: Set KUBECONFIG to your cluster config file, e.g. export KUBECONFIG=~/.kube/config"},
+		{"NotEnoughBalance", "  Hint: Your cloud account balance is insufficient for node provisioning.\n  Top up your account or try spot instances to lower the cost threshold."},
+		{"docker", "  Hint: Ensure Docker daemon is running: 'docker info'"},
+		{"registry", "  Hint: Check registry credentials: 'docker login <registry-url>'"},
+		{"unauthorized", "  Hint: Your cloud credentials may be expired. Re-authenticate with your provider."},
+		{"timeout", "  Hint: The operation timed out. Check network connectivity and retry."},
+	}
+
+	for _, h := range hints {
+		if strings.Contains(strings.ToLower(msg), strings.ToLower(h.pattern)) {
+			color.Yellow(h.hint)
+			return
+		}
+	}
 }
