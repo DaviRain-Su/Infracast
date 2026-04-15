@@ -167,7 +167,7 @@ infracast status --env dev
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `ECFG001: failed to load config` | Missing or invalid `infracast.yaml` | Run `infracast init` or check YAML syntax |
-| `ECFG002: environment not found` | Environment name doesn't exist | Run `infracast env list` to see available envs |
+| `ECFG019: environment not found` | Environment name doesn't exist | Run `infracast env list` to see available envs |
 | `EDEPLOY001: invalid environment` | Typo in `--env` flag | Valid values: `dev`, `staging`, `production`, `local` |
 | `NotEnoughBalance` | Cloud account balance too low for node provisioning | Top up account or use spot instances |
 | `KUBECONFIG` not set | Missing Kubernetes config | `export KUBECONFIG=~/.kube/config` |

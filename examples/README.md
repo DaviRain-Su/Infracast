@@ -52,7 +52,25 @@ A web frontend demonstrating:
 **Resources:**
 - Object Storage: `assets` (OSS)
 
-### 4. migration (Database Migrations)
+### 5. health-check (Minimal Observable Application)
+
+A minimal observable application demonstrating:
+- **Liveness probe** (`/livez`) — always returns ok + uptime
+- **Readiness probe** (`/readyz`) — dependency checks with failure simulation
+- **Diagnostics** (`/diag`) — hostname, Go version, CPU count, environment
+- **Zero cloud resources** — no database, cache, or storage
+- **Failure mode** — set `SIMULATE_FAILURE=true` to test failure detection
+
+**Endpoints:**
+- `GET /livez` - Kubernetes liveness probe
+- `GET /readyz` - Kubernetes readiness probe (with dependency checks)
+- `GET /diag` - Diagnostic information
+
+**Resources:** None
+
+**Use case:** Verify Infracast deploy pipeline end-to-end, including health verification and failure detection.
+
+### 6. migration (Database Migrations)
 
 Example database migrations demonstrating:
 - Forward-only migration strategy
