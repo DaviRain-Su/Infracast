@@ -4,6 +4,21 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.1.4] — 2026-04-15
+
+### Fixed
+
+- **State store resource leaks (P0)**: Added `defer store.Close()` to all state store opens in `status.go`, `provision.go`, `deploy.go` (validateEnvironment), and `env.go` (loadEnvironments, saveEnvironment, deleteEnvironment)
+- **Deploy pipeline redundancy (P1)**: Replaced 4 independent `Pipeline.Execute()` calls (each running all 7 steps) with a single execution via `runDeployPipeline()` — eliminates 3× redundant pipeline runs
+- **Duplicate helper function (P1)**: Removed `envAnyProvision()` from provision.go, unified on `envAny()` from destroy.go
+- **Destroy error codes (P1)**: Added structured error codes `EDESTROY001`–`EDESTROY005` to all destroy command error paths (was plain text)
+- **`setDefaultEnvironment` crash (P2)**: Now creates `.infra/` directory before writing `default-env` file (was failing if directory didn't exist)
+- **Silent error in `loadEnvironments` (P2)**: `ListResourcesByEnv` errors are now surfaced instead of silently discarded
+
+### Added
+
+- **Regression tests**: `TestDestroyErrorCodesStructured`, `TestDestroyCredentialErrorCode`, `TestSetDefaultEnvironmentCreatesDir`, `TestDeployPipelineUsedOnce`
+
 ## [v0.1.3] — 2026-04-15
 
 ### Changed

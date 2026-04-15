@@ -1,9 +1,32 @@
-# Release Notes: v0.1.3
+# Release Notes: v0.1.4
 
 **Date**: 2026-04-15
 **Status**: Patch Release (single-cloud, Alicloud only)
 
 ---
+
+## What's Fixed in v0.1.4
+
+- **State store resource leaks (P0)**: All `state.NewStore()` calls now have `defer store.Close()` — prevents SQLite connection leaks in status, provision, deploy, and env commands
+- **Deploy pipeline 4× redundancy (P1)**: Each deploy step (build/push/k8s-deploy/verify) was independently executing the full 7-step pipeline. Now runs once via `runDeployPipeline()`. Net reduction: ~160 lines, 3× fewer pipeline executions per deploy
+- **Duplicate `envAnyProvision()` (P1)**: Removed from provision.go; unified on `envAny()` already in destroy.go
+- **Destroy missing error codes (P1)**: Added `EDESTROY001`–`EDESTROY005` to all error paths (missing env, broad prefix, missing credentials, provider creation, partial failure)
+- **`env use` crash without `.infra/` (P2)**: `setDefaultEnvironment()` now calls `os.MkdirAll(".infra", 0755)` before writing
+- **Silent `loadEnvironments` error (P2)**: `ListResourcesByEnv` errors now propagate instead of being discarded with `_`
+
+### Regression Tests Added
+
+- `TestDestroyErrorCodesStructured` — validates `EDESTROY001` on empty env
+- `TestDestroyCredentialErrorCode` — validates `EDESTROY003` on missing credentials
+- `TestSetDefaultEnvironmentCreatesDir` — validates `.infra/` auto-creation + file content
+- `TestDeployPipelineUsedOnce` — validates step result type compatibility
+
+---
+
+## Previous Release: v0.1.3
+
+**Date**: 2026-04-15
+**Status**: Patch Release (single-cloud, Alicloud only)
 
 ## Breaking Behavior Change in v0.1.3
 
