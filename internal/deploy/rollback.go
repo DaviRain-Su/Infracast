@@ -85,14 +85,46 @@ func (r *RollbackManager) rollbackK8s(ctx context.Context, deploymentName string
 	return nil
 }
 
-// rollbackImage reverts to a specific image version
+// rollbackImage reverts the deployment to a specific image tag.
+// The target image must be set via SetTargetImage before calling Rollback.
 func (r *RollbackManager) rollbackImage(ctx context.Context, deploymentName string) error {
-	// TODO: Implement image-based rollback
-	// This would:
-	// 1. Get current deployment
-	// 2. Update container image to previous version
-	// 3. Apply the change
-	return fmt.Errorf("image-based rollback not yet implemented")
+	if r.state.OriginalImage == "" {
+		return fmt.Errorf("EDEPLOY069: target image not set — call SetTargetImage before rollback")
+	}
+
+	if r.k8sClient == nil || r.k8sClient.clientset == nil {
+		return fmt.Errorf("EDEPLOY060: K8s client not initialized")
+	}
+
+	// Get current deployment
+	deployment, err := r.k8sClient.clientset.AppsV1().Deployments(r.k8sClient.namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("EDEPLOY061: failed to get deployment: %w", err)
+	}
+
+	// Update container image to target
+	if len(deployment.Spec.Template.Spec.Containers) == 0 {
+		return fmt.Errorf("EDEPLOY069: deployment has no containers")
+	}
+	deployment.Spec.Template.Spec.Containers[0].Image = r.state.OriginalImage
+
+	// Apply the update
+	_, err = r.k8sClient.clientset.AppsV1().Deployments(r.k8sClient.namespace).Update(ctx, deployment, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("EDEPLOY061: failed to update deployment image: %w", err)
+	}
+
+	// Wait for rollback to stabilize
+	if err := r.waitForRollback(ctx, deploymentName); err != nil {
+		return fmt.Errorf("EDEPLOY062: rollback did not stabilize: %w", err)
+	}
+
+	return nil
+}
+
+// SetTargetImage sets the image to rollback to
+func (r *RollbackManager) SetTargetImage(image string) {
+	r.state.OriginalImage = image
 }
 
 // hasPreviousRevision checks if deployment has a revision to rollback to
@@ -165,7 +197,11 @@ func (r *RollbackManager) isRollbackStable(ctx context.Context, deploymentName s
 	}
 
 	// Check if all replicas are ready
-	if deployment.Status.ReadyReplicas < *deployment.Spec.Replicas {
+	desired := int32(1)
+	if deployment.Spec.Replicas != nil {
+		desired = *deployment.Spec.Replicas
+	}
+	if deployment.Status.ReadyReplicas < desired {
 		return false, nil
 	}
 

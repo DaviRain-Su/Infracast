@@ -199,3 +199,109 @@ func TestBuildEnvStatus_ErrorHintPopulated(t *testing.T) {
 	assert.Equal(t, "EPROV001: missing credentials", es.Resources[0].ErrorMsg)
 	assert.Contains(t, es.Resources[0].ErrorHint, "ALICLOUD_ACCESS_KEY")
 }
+
+// v0.2.0 --set config override regression tests
+
+func TestParseSetValues_Valid(t *testing.T) {
+	vals, err := parseSetValues([]string{"region=cn-shanghai", "replicas=3"})
+	assert.NoError(t, err)
+	assert.Equal(t, "cn-shanghai", vals["region"])
+	assert.Equal(t, "3", vals["replicas"])
+}
+
+func TestParseSetValues_EmptySlice(t *testing.T) {
+	vals, err := parseSetValues(nil)
+	assert.NoError(t, err)
+	assert.Empty(t, vals)
+}
+
+func TestParseSetValues_InvalidFormat(t *testing.T) {
+	_, err := parseSetValues([]string{"no-equals-sign"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ECFG006")
+}
+
+func TestParseSetValues_EmptyKey(t *testing.T) {
+	_, err := parseSetValues([]string{"=value"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ECFG006")
+}
+
+func TestParseSetValues_ValueWithEquals(t *testing.T) {
+	vals, err := parseSetValues([]string{"key=val=ue"})
+	assert.NoError(t, err)
+	assert.Equal(t, "val=ue", vals["key"])
+}
+
+func TestApplyOverrides_Region(t *testing.T) {
+	dc := &DeployConfig{Region: "cn-hangzhou"}
+	applyOverrides(dc, map[string]string{"region": "cn-shanghai"})
+	assert.Equal(t, "cn-shanghai", dc.Region)
+}
+
+func TestApplyOverrides_Nil(t *testing.T) {
+	dc := &DeployConfig{Region: "cn-hangzhou"}
+	applyOverrides(dc, nil)
+	assert.Equal(t, "cn-hangzhou", dc.Region, "nil overrides should not change config")
+}
+
+func TestDeployCommand_SetFlag(t *testing.T) {
+	cmd := newDeployCommand()
+	flag := cmd.Flags().Lookup("set")
+	assert.NotNil(t, flag, "--set flag should exist")
+}
+
+func TestNewRollbackCommand(t *testing.T) {
+	cmd := newRollbackCommand()
+	assert.NotNil(t, cmd)
+	assert.Equal(t, "rollback", cmd.Name())
+	assert.Equal(t, "Rollback deployment to a previous image", cmd.Short)
+
+	envFlag := cmd.Flags().Lookup("env")
+	assert.NotNil(t, envFlag)
+	assert.Equal(t, "dev", envFlag.DefValue)
+
+	imageFlag := cmd.Flags().Lookup("image")
+	assert.NotNil(t, imageFlag)
+	assert.Equal(t, "", imageFlag.DefValue)
+}
+
+func TestRollbackCommandRegistered(t *testing.T) {
+	root := NewRootCommand("test", "abc123", "2026-01-01")
+	commands := root.Commands()
+	found := false
+	for _, cmd := range commands {
+		if cmd.Name() == "rollback" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "rollback command should be registered in root")
+}
+
+func TestLoadDeployConfig_OverridePriority(t *testing.T) {
+	// Without config file, defaults + overrides
+	cfg, err := loadDeployConfig("dev", map[string]string{"region": "cn-beijing"})
+	assert.NoError(t, err)
+	assert.Equal(t, "cn-beijing", cfg.Region, "--set region should override default")
+}
+
+func TestBuildPipelineInput_ReplicasOverride(t *testing.T) {
+	cfg := &DeployConfig{
+		AppName:     "test-app",
+		Environment: "dev",
+		Region:      "cn-hangzhou",
+	}
+
+	// Default replicas = 1
+	input := buildPipelineInput(cfg, nil)
+	assert.Equal(t, 1, input.Replicas)
+
+	// Override replicas = 5
+	input = buildPipelineInput(cfg, map[string]string{"replicas": "5"})
+	assert.Equal(t, 5, input.Replicas)
+
+	// Invalid replicas ignored
+	input = buildPipelineInput(cfg, map[string]string{"replicas": "abc"})
+	assert.Equal(t, 1, input.Replicas)
+}

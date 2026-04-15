@@ -34,6 +34,7 @@ with minimal infrastructure configuration.`,
 	rootCmd.AddCommand(newDestroyCommand())
 	rootCmd.AddCommand(newStatusCommand())
 	rootCmd.AddCommand(newLogsCommand())
+	rootCmd.AddCommand(newRollbackCommand())
 
 	return rootCmd
 }

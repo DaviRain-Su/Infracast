@@ -121,7 +121,7 @@ func TestBuildPipelineInput(t *testing.T) {
 		Region:      "cn-shanghai",
 	}
 
-	input := buildPipelineInput(cfg)
+	input := buildPipelineInput(cfg, nil)
 	assert.Equal(t, "test-app", input.AppName)
 	assert.Equal(t, "staging", input.Env)
 	assert.Equal(t, "cn-shanghai", input.ACRRegion)
@@ -196,7 +196,7 @@ func TestDeployOptionsFields(t *testing.T) {
 // TestLoadDeployConfig validates config loading falls back to defaults when no config file
 func TestLoadDeployConfig(t *testing.T) {
 	// Without infracast.yaml, should fall back to defaults
-	cfg, err := loadDeployConfig("dev")
+	cfg, err := loadDeployConfig("dev", nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "dev", cfg.Environment)
@@ -207,7 +207,7 @@ func TestLoadDeployConfig(t *testing.T) {
 
 // TestDeployConfigResourceInfo validates ResourceInfo struct
 func TestDeployConfigResourceInfo(t *testing.T) {
-	config, _ := loadDeployConfig("dev")
+	config, _ := loadDeployConfig("dev", nil)
 	assert.GreaterOrEqual(t, len(config.Resources), 1)
 
 	for _, r := range config.Resources {

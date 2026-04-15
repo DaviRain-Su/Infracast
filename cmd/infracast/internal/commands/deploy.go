@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,7 @@ func newDeployCommand() *cobra.Command {
 		skipBuild  bool
 		skipVerify bool
 		dryRun     bool
+		setValues  []string
 	)
 
 	cmd := &cobra.Command{
@@ -47,6 +49,9 @@ Examples:
   # Deploy to specific environment
   infracast deploy --env production
 
+  # Override config values
+  infracast deploy --set region=cn-shanghai --set replicas=3
+
   # Verbose output with full logs
   infracast deploy --verbose
 
@@ -56,12 +61,17 @@ Examples:
   # Dry run (show what would be deployed)
   infracast deploy --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			overrides, err := parseSetValues(setValues)
+			if err != nil {
+				return err
+			}
 			return runDeploy(DeployOptions{
 				Env:        env,
 				Verbose:    verbose,
 				SkipBuild:  skipBuild,
 				SkipVerify: skipVerify,
 				DryRun:     dryRun,
+				Overrides:  overrides,
 			})
 		},
 	}
@@ -71,6 +81,7 @@ Examples:
 	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "Skip Docker build (use existing image)")
 	cmd.Flags().BoolVar(&skipVerify, "skip-verify", false, "Skip health check verification")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be deployed without executing")
+	cmd.Flags().StringArrayVar(&setValues, "set", nil, "Override config values (e.g. --set region=cn-shanghai --set replicas=3)")
 
 	return cmd
 }
@@ -82,6 +93,7 @@ type DeployOptions struct {
 	SkipBuild  bool
 	SkipVerify bool
 	DryRun     bool
+	Overrides  map[string]string
 }
 
 // runDeploy executes the deployment workflow
@@ -108,7 +120,7 @@ func runDeploy(opts DeployOptions) error {
 	}
 
 	// Load configuration
-	config, err := loadDeployConfig(opts.Env)
+	config, err := loadDeployConfig(opts.Env, opts.Overrides)
 	if err != nil {
 		return fmt.Errorf("ECFG001: failed to load config: %w", err)
 	}
@@ -235,12 +247,31 @@ func validateEnvironment(env string) error {
 	return fmt.Errorf("environment not found: %s (create it with 'infracast env create %s --provider alicloud --region cn-hangzhou')", env, env)
 }
 
-// loadDeployConfig loads the deployment configuration from infracast.yaml
-func loadDeployConfig(env string) (*DeployConfig, error) {
+// parseSetValues parses --set key=value pairs into a map
+func parseSetValues(values []string) (map[string]string, error) {
+	result := make(map[string]string, len(values))
+	for _, v := range values {
+		idx := strings.Index(v, "=")
+		if idx <= 0 {
+			return nil, fmt.Errorf("ECFG006: invalid --set value %q (expected key=value)", v)
+		}
+		key := strings.TrimSpace(v[:idx])
+		val := strings.TrimSpace(v[idx+1:])
+		if key == "" {
+			return nil, fmt.Errorf("ECFG006: invalid --set value %q (empty key)", v)
+		}
+		result[key] = val
+	}
+	return result, nil
+}
+
+// loadDeployConfig loads the deployment configuration from infracast.yaml.
+// CLI --set overrides take highest priority (over env-specific and file-level values).
+func loadDeployConfig(env string, overrides map[string]string) (*DeployConfig, error) {
 	cfg, err := config.Load("")
 	if err != nil {
 		// Fall back to defaults if config file not found
-		return &DeployConfig{
+		dc := &DeployConfig{
 			AppName:     "my-app",
 			Environment: env,
 			Provider:    "alicloud",
@@ -249,7 +280,9 @@ func loadDeployConfig(env string) (*DeployConfig, error) {
 				{Type: "sql_server", Name: "main"},
 				{Type: "redis", Name: "cache"},
 			},
-		}, nil
+		}
+		applyOverrides(dc, overrides)
+		return dc, nil
 	}
 
 	provider := cfg.Provider
@@ -272,7 +305,7 @@ func loadDeployConfig(env string) (*DeployConfig, error) {
 		region = "cn-hangzhou"
 	}
 
-	return &DeployConfig{
+	dc := &DeployConfig{
 		AppName:     cfg.AppName(),
 		Environment: env,
 		Provider:    provider,
@@ -281,14 +314,27 @@ func loadDeployConfig(env string) (*DeployConfig, error) {
 			{Type: "sql_server", Name: "main"},
 			{Type: "redis", Name: "cache"},
 		},
-	}, nil
+	}
+	applyOverrides(dc, overrides)
+	return dc, nil
+}
+
+// applyOverrides applies CLI --set overrides to the deploy config.
+// Supported keys: region, replicas (stored for pipeline input).
+func applyOverrides(dc *DeployConfig, overrides map[string]string) {
+	if len(overrides) == 0 {
+		return
+	}
+	if v, ok := overrides["region"]; ok {
+		dc.Region = v
+	}
 }
 
 // runDeployPipeline executes the deploy pipeline once and reports per-step results.
 // Before v0.1.4, each CLI step ran the full 7-step pipeline independently (4x redundancy).
 func runDeployPipeline(ctx context.Context, opts DeployOptions, cfg *DeployConfig, audit *state.AuditStore, traceID string) error {
 	pipeline := deploy.NewPipeline(opts.Verbose)
-	input := buildPipelineInput(cfg)
+	input := buildPipelineInput(cfg, opts.Overrides)
 
 	result := pipeline.Execute(ctx, input)
 
@@ -320,8 +366,9 @@ func runDeployPipeline(ctx context.Context, opts DeployOptions, cfg *DeployConfi
 	return result.Error
 }
 
-// buildPipelineInput converts DeployConfig to PipelineInput
-func buildPipelineInput(cfg *DeployConfig) *deploy.PipelineInput {
+// buildPipelineInput converts DeployConfig to PipelineInput.
+// overrides may contain "replicas" to set the replica count.
+func buildPipelineInput(cfg *DeployConfig, overrides map[string]string) *deploy.PipelineInput {
 	accessKey := os.Getenv("ALICLOUD_ACCESS_KEY")
 	if accessKey == "" {
 		accessKey = os.Getenv("ALICLOUD_ACCESS_KEY_ID")
@@ -331,11 +378,18 @@ func buildPipelineInput(cfg *DeployConfig) *deploy.PipelineInput {
 		secretKey = os.Getenv("ALICLOUD_ACCESS_KEY_SECRET")
 	}
 
+	replicas := 1
+	if v, ok := overrides["replicas"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			replicas = n
+		}
+	}
+
 	return &deploy.PipelineInput{
 		AppName:      cfg.AppName,
 		Env:          cfg.Environment,
 		ConfigPath:   "infracast.yaml",
-		Replicas:     1,
+		Replicas:     replicas,
 		Port:         8080,
 		ACRRegion:    cfg.Region,
 		AliAccessKey: accessKey,
