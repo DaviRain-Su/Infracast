@@ -4,6 +4,26 @@ All notable changes to Infracast will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [v0.1.6] — 2026-04-15
+
+### Fixed
+
+- **P0: `commit[:7]` panic (F1)**: Added `shortCommit()` bounds check — prevents runtime panic when commit string is shorter than 7 characters
+- **P0: K8s deployment timeout bypass (F2)**: `WaitForDeployment` now uses `timeoutCtx` instead of parent `ctx` for API calls — timeout mechanism was silently ineffective
+- **P0: Nil `Spec.Replicas` dereference (F3)**: Added nil guard in `health.go` and `k8s.go` — K8s API can return nil Replicas, defaulting to 1
+- **P0: `generateRandomPassword` panic (F4)**: Changed `pickRandChar`/`generateRandomPassword` from panic to error return — prevents provisioning crash on crypto/rand failure
+- **P1: Audit query scan errors swallowed (F7)**: Scan errors now propagated via `lastScanErr` instead of silent `continue`
+- **P1: `RowsAffected` error ignored (F8)**: `store.go` now checks `RowsAffected()` error, returns `ESTATE003` on failure
+- **P1: `updateResourceStatus` error swallowed (F9)**: Provisioner now logs UpsertResource failures to stderr
+- **P1: Nil map panic in infragen (F10)**: `mapSQLServer`/`mapRedis`/`mapObjectStore` use `getOrDefault()` for nil-safe map access
+
+### Known Follow-ups (deferred to v0.1.7)
+
+- F5: `finalizeResult` uses `context.Background()` — intentional design (wontfix)
+- F6: `run.go LoadConfig` stub returns hardcoded defaults — known placeholder
+- F11: VSwitch orphan on Redis partial failure — requires architectural change
+- D1-D6: Signal handler leaks, parseInt silent failure, hardcoded constants, etc.
+
 ## [v0.1.5] — 2026-04-15
 
 ### Fixed

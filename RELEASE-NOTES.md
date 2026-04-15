@@ -1,9 +1,48 @@
-# Release Notes: v0.1.5
+# Release Notes: v0.1.6
 
 **Date**: 2026-04-15
 **Status**: Patch Release (single-cloud, Alicloud only)
 
 ---
+
+## What's Fixed in v0.1.6
+
+### P0 — Critical Fixes
+
+- **F1: `commit[:7]` panic** — New `shortCommit()` function prevents runtime panic when commit string is shorter than 7 characters (affects `Build`, `GetLocalImageName`, `StreamBuild`)
+- **F2: K8s deployment timeout bypass** — `WaitForDeployment` now passes `timeoutCtx` (not parent `ctx`) to K8s API calls. Previously the timeout was silently ineffective
+- **F3: Nil `Spec.Replicas` dereference** — Added nil guard before dereferencing `deployment.Spec.Replicas` in `health.go` and `k8s.go`. K8s API can return nil, now defaults to 1
+- **F4: `generateRandomPassword` panic** — `pickRandChar` and `generateRandomPassword` now return `(T, error)` instead of panicking on crypto/rand failure or empty charset
+
+### P1 — High Priority Fixes
+
+- **F7: Audit query scan errors** — `Query()` in `audit.go` now propagates scan errors via `lastScanErr` instead of silently continuing with incomplete results
+- **F8: `RowsAffected` error ignored** — `store.go` UpsertResource now checks `RowsAffected()` error, returning `ESTATE003` on failure instead of false `ErrConcurrentUpdate`
+- **F9: Resource status update error swallowed** — Provisioner `updateResourceStatus` now logs `UpsertResource` failures to stderr
+- **F10: Nil map panic in infragen** — `mapSQLServer`, `mapRedis`, `mapObjectStore` use new `getOrDefault()` for nil-safe map access with defaults
+
+### Regression Tests Added
+
+- `TestShortCommit_BoundsCheck` (5 cases including empty string)
+- `TestGetLocalImageName_ShortCommit`
+- `TestGenerateRandomPassword_ReturnsErrorNotPanic`
+- `TestPickRandChar_EmptyCharset_ReturnsError`
+- `TestGetOrDefault_NilMap`, `TestGetOrDefault_MissingKey`
+- `TestMapSQLServer_NilOutputMap`
+
+### Known Follow-ups (deferred)
+
+- F5: `finalizeResult` uses `context.Background()` — intentional for post-cancel logging (wontfix)
+- F6: `run.go LoadConfig` stub — known placeholder, not a regression
+- F11: VSwitch orphan on Redis partial failure — requires architectural change
+- D1-D6: Signal handler leaks, parseInt silent failure, hardcoded provider constants
+
+---
+
+## Previous Release: v0.1.5
+
+**Date**: 2026-04-15
+**Status**: Patch Release (single-cloud, Alicloud only)
 
 ## What's New in v0.1.5
 
