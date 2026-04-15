@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -134,7 +135,7 @@ func (p *Provider) ProvisionDatabase(ctx context.Context, spec providers.Databas
 	}
 	request.DBInstanceNetType = "Intranet"
 	request.PayType = "Postpaid" // Pay-as-you-go
-	request.SecurityIPList = "127.0.0.1"
+	request.SecurityIPList = p.resolveRdsSecurityIPList(vswID)
 
 	// Set High Availability category
 	if spec.HighAvail != nil && *spec.HighAvail {
@@ -208,6 +209,40 @@ func defaultDBUsername(engine string) string {
 	default:
 		return "root"
 	}
+}
+
+func (p *Provider) resolveRdsSecurityIPList(vswitchID string) string {
+	if configured := strings.TrimSpace(os.Getenv("ALICLOUD_RDS_SECURITY_IP_LIST")); configured != "" {
+		return configured
+	}
+
+	cidr, err := p.vswitchCIDR(vswitchID)
+	if err == nil && cidr != "" {
+		return cidr
+	}
+
+	// Private-network fallback only. Never widen to 0.0.0.0/0 by default.
+	return networkVSwitchCidrBlock
+}
+
+func (p *Provider) vswitchCIDR(vswitchID string) (string, error) {
+	if p.vpcClient == nil {
+		return "", fmt.Errorf("VPC client not initialized")
+	}
+
+	req := vpc.CreateDescribeVSwitchesRequest()
+	req.RegionId = p.region
+	req.VSwitchId = vswitchID
+
+	resp, err := p.vpcClient.DescribeVSwitches(req)
+	if err != nil {
+		return "", err
+	}
+	if resp == nil || len(resp.VSwitches.VSwitch) == 0 {
+		return "", fmt.Errorf("vSwitch %s not found", vswitchID)
+	}
+
+	return strings.TrimSpace(resp.VSwitches.VSwitch[0].CidrBlock), nil
 }
 
 // ProvisionCache creates a Redis cache instance
@@ -331,9 +366,14 @@ func (p *Provider) Apply(ctx context.Context, plan *providers.PlanResult) (*prov
 	return nil, fmt.Errorf("apply not implemented")
 }
 
-// Destroy destroys a resource
-func (p *Provider) Destroy(ctx context.Context, resourceID string) error {
-	return fmt.Errorf("destroy not implemented")
+// Destroy destroys all resources for an environment
+func (p *Provider) Destroy(ctx context.Context, envID string) error {
+	opts := DestroyOptions{
+		DryRun: false,
+		Prefix: fmt.Sprintf("infracast-%s", envID),
+	}
+	_, err := p.DestroyEnvironment(ctx, envID, opts)
+	return err
 }
 
 // OTLPEndpoint returns the OpenTelemetry endpoint

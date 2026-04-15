@@ -9,6 +9,30 @@ This guide will walk you through deploying your first Encore application using I
 - [Infracast CLI](../README.md#installation)
 - Alibaba Cloud account with access credentials
 
+## Credential and Security Baseline (AliCloud)
+
+Set credentials in your shell (never commit them to git):
+
+```bash
+export ALICLOUD_ACCESS_KEY="your-access-key-id"
+export ALICLOUD_SECRET_KEY="your-access-key-secret"
+export ALICLOUD_REGION="cn-hangzhou"
+
+# Optional: override RDS whitelist explicitly.
+# Default behavior (recommended): use current VSwitch CIDR automatically.
+export ALICLOUD_RDS_SECURITY_IP_LIST="10.0.0.0/24"
+```
+
+Recommended minimum RAM permissions for single-cloud flow:
+- `AliyunRDSFullAccess`
+- `AliyunKvstoreFullAccess`
+- `AliyunOSSFullAccess`
+- `AliyunVPCFullAccess`
+- `AliyunSTSAssumeRoleAccess` (only when using STS mode)
+
+For production, replace broad managed policies with a custom least-privilege policy
+scoped to your target region/resources.
+
 ## 5-Step Quickstart
 
 ### Step 1: Initialize Your Project
@@ -62,6 +86,10 @@ This will:
 - Provision RDS PostgreSQL instance
 - Create Redis cache cluster
 - Generate `infracfg.json` with connection details
+
+Security notes:
+- Database and Redis passwords are generated with cryptographically secure randomness.
+- RDS whitelist defaults to VSwitch CIDR (private network), not `127.0.0.1` and not `0.0.0.0/0`.
 
 ### Step 4: Deploy Your Application
 

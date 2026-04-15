@@ -675,8 +675,8 @@ func TestUpsertResource_ConcurrentConflict(t *testing.T) {
 | Field | Go Type | Source | Notes |
 |-------|---------|--------|-------|
 | Mode | `string` | `--credentials-mode` flag or env | `"sts"` (default) or `"direct"` |
-| AccessKeyID | `string` | env `ALICLOUD_ACCESS_KEY_ID` | — |
-| AccessKeySecret | `string` | env `ALICLOUD_ACCESS_KEY_SECRET` | — |
+| AccessKeyID | `string` | env `ALICLOUD_ACCESS_KEY` (alias: `ALICLOUD_ACCESS_KEY_ID`) | — |
+| AccessKeySecret | `string` | env `ALICLOUD_SECRET_KEY` (alias: `ALICLOUD_ACCESS_KEY_SECRET`) | — |
 | RoleArn | `string` | env `ALICLOUD_ROLE_ARN` | For STS AssumeRole |
 | RoleSessionName | `string` | auto-generated | `"infracast-{timestamp}"` |
 | DurationSeconds | `int` | default 3600 | 900-3600 |
