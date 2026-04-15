@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/cr"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 // ACRClient wraps AliCloud Container Registry operations
@@ -45,13 +47,10 @@ func (a *ACRClient) PushImage(ctx context.Context, localImage, tag string) (stri
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
-				return "", fmt.Errorf("context cancelled during retry: %w", ctx.Err())
+				return "", fmt.Errorf("EDEPLOY041: context cancelled during retry: %w", ctx.Err())
 			}
 		}
 
-		// Note: Actual docker push requires docker CLI or registry client
-		// This is a placeholder for the ACR push operation
-		// In production, this would use docker client or go-containerregistry
 		lastErr = a.pushWithSDK(ctx, localImage, acrImage)
 		if lastErr == nil {
 			return acrImage, nil
@@ -61,13 +60,35 @@ func (a *ACRClient) PushImage(ctx context.Context, localImage, tag string) (stri
 	return "", fmt.Errorf("EDEPLOY040: failed to push image after 3 attempts: %w", lastErr)
 }
 
-// pushWithSDK attempts to push using ACR SDK (placeholder for actual implementation)
+// pushWithSDK pushes image using go-containerregistry
 func (a *ACRClient) pushWithSDK(ctx context.Context, localImage, acrImage string) error {
-	// TODO: Implement actual image push using docker client or go-containerregistry
-	// For now, this validates the image name format
 	if localImage == "" || acrImage == "" {
-		return fmt.Errorf("invalid image name")
+		return fmt.Errorf("EDEPLOY042: invalid image name")
 	}
+
+	// Parse source image reference
+	srcRef, err := name.ParseReference(localImage)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY043: failed to parse source image: %w", err)
+	}
+
+	// Parse destination image reference
+	dstRef, err := name.ParseReference(acrImage)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY044: failed to parse destination image: %w", err)
+	}
+
+	// Pull source image
+	srcImg, err := remote.Image(srcRef, remote.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("EDEPLOY045: failed to pull source image: %w", err)
+	}
+
+	// Push to ACR (using anonymous auth for now, should use ACR credentials)
+	if err := remote.Write(dstRef, srcImg, remote.WithContext(ctx)); err != nil {
+		return fmt.Errorf("EDEPLOY046: failed to push image to ACR: %w", err)
+	}
+
 	return nil
 }
 
