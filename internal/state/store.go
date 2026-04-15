@@ -77,7 +77,7 @@ func (s *Store) initSchema() error {
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		env_id TEXT NOT NULL,
 		resource_name TEXT NOT NULL,
-		resource_type TEXT NOT NULL CHECK(resource_type IN ('database','cache','object_storage','compute','vpc','vswitch')),
+		resource_type TEXT NOT NULL CHECK(resource_type IN ('database','cache','object_storage','compute','vpc','vswitch','environment')),
 		provider_resource_id TEXT,
 		spec_hash TEXT NOT NULL,
 		state_version INTEGER NOT NULL DEFAULT 1 CHECK(state_version > 0),

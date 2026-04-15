@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -220,11 +221,16 @@ func runEnvShow(name string) error {
 		fmt.Println()
 		fmt.Println("Resources:")
 		for _, res := range env.Resources {
-			statusColor := color.GreenString
-			if res.Status != "ready" {
-				statusColor = color.YellowString
+			var statusStr string
+			switch res.Status {
+			case "ready", "created":
+				statusStr = color.GreenString(res.Status)
+			case "failed", "error":
+				statusStr = color.RedString(res.Status)
+			default:
+				statusStr = color.YellowString(res.Status)
 			}
-			fmt.Printf("  • %s/%s: %s\n", res.Type, res.Name, statusColor(res.Status))
+			fmt.Printf("  • %s/%s: %s\n", res.Type, res.Name, statusStr)
 		}
 	}
 
@@ -252,7 +258,7 @@ func runEnvCreate(name, provider, region string) error {
 
 	// Validate provider
 	if !isValidProvider(provider) {
-		return fmt.Errorf("ECFG005: unsupported provider: %s", provider)
+		return fmt.Errorf("ECFG005: unsupported provider: %s (v0.1.x supports alicloud only)", provider)
 	}
 
 	// Create environment
@@ -347,6 +353,22 @@ func loadEnvironments() ([]Environment, error) {
 			Region:   "-",
 		}
 		for _, r := range resources {
+			if r.ResourceName == "_env_meta" {
+				// Parse provider/region from meta record's ConfigJSON
+				var meta struct {
+					Provider string `json:"provider"`
+					Region   string `json:"region"`
+				}
+				if err := json.Unmarshal([]byte(r.ConfigJSON), &meta); err == nil {
+					if meta.Provider != "" {
+						env.Provider = meta.Provider
+					}
+					if meta.Region != "" {
+						env.Region = meta.Region
+					}
+				}
+				continue
+			}
 			env.Resources = append(env.Resources, EnvResource{
 				Type:   r.ResourceType,
 				Name:   r.ResourceName,

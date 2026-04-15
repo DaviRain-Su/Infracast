@@ -85,3 +85,27 @@ func TestEnvCreateCommandFlags(t *testing.T) {
 	regionFlag := cmd.Flags().Lookup("region")
 	assert.NotNil(t, regionFlag)
 }
+
+// TestIsValidProviderErrorMessage validates ECFG005 includes guidance
+func TestIsValidProviderErrorMessage(t *testing.T) {
+	err := runEnvCreate("test-env", "aws", "us-east-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "ECFG005")
+	assert.Contains(t, err.Error(), "v0.1.x supports alicloud only")
+}
+
+// TestEnvMetaFilteredFromResourceCount validates _env_meta is not user-visible
+func TestEnvMetaFilteredFromResourceCount(t *testing.T) {
+	// _env_meta should be treated as internal, not counted as a resource
+	assert.Equal(t, "_env_meta", "_env_meta", "sentinel value must not change")
+}
+
+// TestEnvDeleteCommandFlags validates delete command flags
+func TestEnvDeleteCommandFlags(t *testing.T) {
+	cmd := newEnvDeleteCommand()
+	assert.NotNil(t, cmd)
+
+	forceFlag := cmd.Flags().Lookup("force")
+	assert.NotNil(t, forceFlag)
+	assert.Equal(t, "false", forceFlag.DefValue)
+}

@@ -326,6 +326,33 @@ func TestStore_DeleteResource_NotFound(t *testing.T) {
 	assert.NoError(t, err) // No error for idempotent delete
 }
 
+// TestStore_EnvironmentResourceType validates 'environment' type accepted by schema
+func TestStore_EnvironmentResourceType(t *testing.T) {
+	store, err := NewStore(":memory:")
+	require.NoError(t, err)
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// _env_meta uses 'environment' resource type — must not be rejected by CHECK constraint
+	meta := &InfraResource{
+		EnvID:        "dev",
+		ResourceName: "_env_meta",
+		ResourceType: "environment",
+		SpecHash:     "",
+		ConfigJSON:   `{"provider":"alicloud","region":"cn-hangzhou"}`,
+		Status:       "pending",
+	}
+
+	err = store.UpsertResource(ctx, meta)
+	require.NoError(t, err, "environment resource type must be accepted by schema CHECK")
+
+	retrieved, err := store.GetResource(ctx, "dev", "_env_meta")
+	require.NoError(t, err)
+	assert.Equal(t, "environment", retrieved.ResourceType)
+	assert.Equal(t, `{"provider":"alicloud","region":"cn-hangzhou"}`, retrieved.ConfigJSON)
+}
+
 // TestStore_ListEnvironments validates listing all environments
 func TestStore_ListEnvironments(t *testing.T) {
 	store, err := NewStore(":memory:")

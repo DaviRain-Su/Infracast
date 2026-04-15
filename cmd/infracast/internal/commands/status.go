@@ -81,8 +81,12 @@ func showAllStatus(ctx context.Context, store *state.Store) error {
 			continue
 		}
 
-		ready, failed := 0, 0
+		total, ready, failed := 0, 0, 0
 		for _, r := range resources {
+			if r.ResourceName == "_env_meta" {
+				continue
+			}
+			total++
 			switch r.Status {
 			case "ready", "created":
 				ready++
@@ -96,7 +100,7 @@ func showAllStatus(ctx context.Context, store *state.Store) error {
 			failedStr = color.RedString("%d", failed)
 		}
 
-		fmt.Fprintf(w, "%s\t%d\t%d\t%s\n", envName, len(resources), ready, failedStr)
+		fmt.Fprintf(w, "%s\t%d\t%d\t%s\n", envName, total, ready, failedStr)
 	}
 
 	w.Flush()
@@ -115,7 +119,15 @@ func showEnvStatus(ctx context.Context, store *state.Store, env string) error {
 	color.Cyan("Environment: %s", env)
 	fmt.Println()
 
-	if len(resources) == 0 {
+	// Filter out internal _env_meta records
+	var visible []*state.InfraResource
+	for _, r := range resources {
+		if r.ResourceName != "_env_meta" {
+			visible = append(visible, r)
+		}
+	}
+
+	if len(visible) == 0 {
 		fmt.Println("No resources found.")
 		fmt.Printf("Run 'infracast provision --env %s' to create resources.\n", env)
 		return nil
@@ -125,7 +137,7 @@ func showEnvStatus(ctx context.Context, store *state.Store, env string) error {
 	fmt.Fprintln(w, "TYPE\tNAME\tSTATUS\tPROVIDER ID\tUPDATED")
 	fmt.Fprintln(w, "----\t----\t------\t-----------\t-------")
 
-	for _, r := range resources {
+	for _, r := range visible {
 		statusStr := r.Status
 		switch r.Status {
 		case "ready", "created":
