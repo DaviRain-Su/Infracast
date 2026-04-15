@@ -15,9 +15,10 @@ Single-cloud (Alicloud) end-to-end demo: init → provision → deploy → verif
 | 2. Build (dry-run) | 1 min | No | `infracast deploy --env dev --dry-run` |
 | 3. Provision | 3–5 min | **Yes** | `infracast provision --env dev` |
 | 4. Deploy | 2–3 min | **Yes** | `infracast deploy --env dev` |
-| 5. Verify | 1 min | **Yes** | Health checks + logs |
+| 5. Verify | 1 min | **Yes** | Health checks via port-forward |
 | 6. Audit trail | 30 sec | No | `infracast logs` |
-| 7. Cleanup | 1–2 min | **Yes** | `infracast destroy` |
+| 7. Notify | 30 sec | Optional | Feishu/DingTalk webhook |
+| 8. Cleanup | 1–2 min | **Yes** | `infracast destroy` |
 
 Steps marked **Yes** create real Alicloud resources and incur cost (~¥2–5 for a full demo run).
 Steps 0–2 and 6 can be run without cloud access for a dry-run demo.
@@ -176,11 +177,18 @@ kubectl logs <pod-name> -n demo-app-dev
 
 ## Step 5: Verify Deployment (1 min)
 
-Check application health:
+Get the service endpoint and check application health:
+
+```bash
+# Get service external IP/port
+kubectl get svc -n demo-app-dev
+# Note the EXTERNAL-IP or use port-forward for demo:
+kubectl port-forward svc/demo-app -n demo-app-dev 8080:80 &
+```
 
 ```bash
 # Liveness probe
-curl -s "$(infracast status --env dev --output url)/livez" | jq .
+curl -s http://localhost:8080/livez | jq .
 ```
 
 **Expected output**:
@@ -193,7 +201,7 @@ curl -s "$(infracast status --env dev --output url)/livez" | jq .
 
 ```bash
 # Readiness probe
-curl -s "$(infracast status --env dev --output url)/readyz" | jq .
+curl -s http://localhost:8080/readyz | jq .
 ```
 
 **Expected output**:
@@ -208,7 +216,12 @@ curl -s "$(infracast status --env dev --output url)/readyz" | jq .
 
 ```bash
 # Diagnostics (shows connected resources)
-curl -s "$(infracast status --env dev --output url)/diag" | jq .
+curl -s http://localhost:8080/diag | jq .
+```
+
+```bash
+# Stop port-forward when done
+kill %1
 ```
 
 ---
@@ -245,7 +258,46 @@ infracast logs --trace trc_xxx --format json | jq '.[].step'
 
 ---
 
-## Step 7: Cleanup (1–2 min)
+## Step 7: Notifications (30 sec)
+
+Infracast sends deployment notifications automatically via Feishu or DingTalk webhooks when configured.
+
+### Configure (before deploy)
+
+Add to `infracast.yaml`:
+
+```yaml
+notifications:
+  feishu:
+    webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-token"
+  # Or DingTalk:
+  # dingtalk:
+  #   webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=your-token"
+```
+
+### Trigger
+
+Notifications fire automatically at the end of `infracast deploy`:
+- **Success**: `✅ Deployment success` with app, env, commit, duration
+- **Failure**: `❌ Deployment failed` with error details
+- **Rollback**: `🔄 Deployment rollback` when auto-rollback triggers
+
+### Verify
+
+After a deploy with notifications configured:
+
+```bash
+# Check audit logs for notify step
+infracast logs --trace <trace_id> --output wide
+```
+
+Look for the `notify` step in the pipeline output. If webhook delivery fails, it's logged as a warning (non-blocking — notification failure does not fail the deploy).
+
+**Without a webhook** (dry-run demo): Notifications are skipped silently when no webhook is configured. You can verify the notifier code path by checking the audit log — if `notify` step appears with status `skip`, it means no webhook was set.
+
+---
+
+## Step 8: Cleanup (1–2 min)
 
 Always dry-run first:
 
