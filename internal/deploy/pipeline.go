@@ -200,6 +200,31 @@ func (p *Pipeline) Execute(ctx context.Context, input *PipelineInput) *PipelineR
 			return p.stepRollback(ctx, input)
 		})
 		result.Steps = append(result.Steps, rollbackStep)
+
+		// Log rollback to audit store for observability
+		if p.auditStore != nil {
+			rbStatus := "success"
+			var rbErr error
+			if !rollbackStep.Success {
+				rbStatus = "failure"
+				rbErr = rollbackStep.Error
+			}
+			_ = p.auditStore.Log(ctx, state.AuditLevelWarning, state.AuditActionRollback,
+				fmt.Sprintf("Rollback triggered for %s/%s (health check failed)", input.AppName, input.Env),
+				state.WithAuditEnv(input.Env),
+				state.WithAuditStep("rollback"),
+				state.WithAuditStatus(rbStatus),
+			)
+			if rbErr != nil {
+				_ = p.auditStore.Log(ctx, state.AuditLevelError, state.AuditActionRollback,
+					fmt.Sprintf("Rollback failed: %v", rbErr),
+					state.WithAuditEnv(input.Env),
+					state.WithAuditStep("rollback"),
+					state.WithAuditStatus("failure"),
+				)
+			}
+		}
+
 		return p.finalizeResult(result, start, 6, step6.Error)
 	}
 
@@ -441,9 +466,11 @@ func (p *Pipeline) stepGenerateConfig(ctx context.Context, input *PipelineInput)
 	// Create config generator
 	generator := infragen.NewGenerator()
 
-	// Generate configuration from resource outputs
-	// TODO: Get BuildMeta from build step
+	// Use rich BuildMeta from build step when available, fall back to AppName only
 	meta := mapper.BuildMeta{AppName: input.AppName}
+	if input.BuildResult != nil {
+		meta = input.BuildResult.BuildMeta
+	}
 	cfg, err := generator.Generate(input.ResourceOutputs, meta, input.Env)
 	if err != nil {
 		return fmt.Errorf("EIGEN001: failed to generate config: %w", err)

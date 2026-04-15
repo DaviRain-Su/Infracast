@@ -288,3 +288,26 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 	assert.Equal(t, "cn-shanghai", loaded.Environments["production"].Region)
 	assert.Equal(t, "rds.mysql.s3.large", loaded.Overrides.Databases["mydb"].InstanceClass)
 }
+
+// TestConfig_AppName validates AppName reads from config with fallback (v0.1.5)
+func TestConfig_AppName(t *testing.T) {
+	t.Run("returns app field when set", func(t *testing.T) {
+		cfg := &Config{App: "my-service"}
+		assert.Equal(t, "my-service", cfg.AppName())
+	})
+
+	t.Run("falls back to my-app when empty", func(t *testing.T) {
+		cfg := &Config{}
+		assert.Equal(t, "my-app", cfg.AppName())
+	})
+
+	t.Run("loads from yaml", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cfgPath := filepath.Join(tmpDir, "infracast.yaml")
+		os.WriteFile(cfgPath, []byte("app: hello-world\nprovider: alicloud\nregion: cn-hangzhou\n"), 0644)
+
+		cfg, err := Load(cfgPath)
+		require.NoError(t, err)
+		assert.Equal(t, "hello-world", cfg.AppName())
+	})
+}

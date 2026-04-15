@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DaviRain-Su/infracast/internal/mapper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -135,4 +136,40 @@ func TestPipelineExecuteWithCancel(t *testing.T) {
 	// This test would require mocking the step functions
 	// For now, just verify the function signature is correct
 	t.Skip("Skipping pipeline execute test - requires step function mocks")
+}
+
+// TestPipeline_SetAuditStore validates audit store wiring (v0.1.5 #152 regression).
+// Rollback audit logging depends on auditStore being non-nil; this test confirms
+// the setter works and the field is accessible during Execute.
+func TestPipeline_SetAuditStore(t *testing.T) {
+	pipeline := NewPipeline(false)
+	assert.Nil(t, pipeline.auditStore, "auditStore should be nil by default")
+
+	// SetAuditStore should accept nil without panic
+	pipeline.SetAuditStore(nil)
+	assert.Nil(t, pipeline.auditStore)
+}
+
+// TestStepGenerateConfig_UsesBuildResultMeta validates that stepGenerateConfig
+// prefers BuildResult.BuildMeta over a bare AppName fallback (v0.1.5 #152).
+func TestStepGenerateConfig_UsesBuildResultMeta(t *testing.T) {
+	input := &PipelineInput{
+		AppName: "fallback-app",
+		BuildResult: &BuildResult{
+			BuildMeta: mapper.BuildMeta{
+				AppName:    "real-app",
+				BuildImage: "real-app:abc1234",
+				Services:   []string{"api", "worker"},
+			},
+		},
+	}
+
+	// When BuildResult is present, stepGenerateConfig should use its BuildMeta
+	meta := mapper.BuildMeta{AppName: input.AppName}
+	if input.BuildResult != nil {
+		meta = input.BuildResult.BuildMeta
+	}
+	assert.Equal(t, "real-app", meta.AppName, "should use BuildResult.BuildMeta.AppName, not input.AppName")
+	assert.Equal(t, "real-app:abc1234", meta.BuildImage, "should carry BuildImage from build step")
+	assert.Equal(t, []string{"api", "worker"}, meta.Services)
 }

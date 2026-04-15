@@ -100,7 +100,7 @@ func runProvision(env, cfgPath string, dryRun bool) error {
 	// Map config to resource specs
 	m := mapper.NewMapper(providers.NewRegistry())
 	buildMeta := mapper.BuildMeta{
-		AppName: "my-app",
+		AppName: cfg.AppName(),
 	}
 	// Populate BuildMeta from config overrides
 	for name := range cfg.Overrides.Databases {

@@ -10,10 +10,19 @@ import (
 
 // Config represents the root configuration
 type Config struct {
+	App          string                 `yaml:"app"`
 	Provider     string                 `yaml:"provider"`
 	Region       string                 `yaml:"region"`
 	Environments map[string]Environment `yaml:"environments,omitempty"`
 	Overrides    Overrides              `yaml:"overrides,omitempty"`
+}
+
+// AppName returns the application name, falling back to "my-app" if unset.
+func (c *Config) AppName() string {
+	if c.App != "" {
+		return c.App
+	}
+	return "my-app"
 }
 
 // Environment represents environment-specific configuration

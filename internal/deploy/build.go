@@ -80,6 +80,7 @@ func (b *Builder) Build(ctx context.Context, appName, commit string) (*BuildResu
 
 	// Extract BuildMeta from build output
 	buildMeta := b.extractBuildMeta(outputStr, appName, commit)
+	buildMeta.BuildImage = parsedTag
 
 	return &BuildResult{
 		Success:   true,

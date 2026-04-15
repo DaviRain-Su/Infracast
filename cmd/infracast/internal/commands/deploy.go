@@ -273,7 +273,7 @@ func loadDeployConfig(env string) (*DeployConfig, error) {
 	}
 
 	return &DeployConfig{
-		AppName:     "my-app",
+		AppName:     cfg.AppName(),
 		Environment: env,
 		Provider:    provider,
 		Region:      region,

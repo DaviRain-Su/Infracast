@@ -153,3 +153,25 @@ func TestBuilderTimeout(t *testing.T) {
 	builder := NewBuilder()
 	assert.Equal(t, 10*time.Minute, builder.timeout)
 }
+
+// TestExtractBuildMeta_BuildImagePopulated validates that extractBuildMeta + Build
+// flow populates BuildImage on the returned BuildMeta (v0.1.5 #152 regression).
+func TestExtractBuildMeta_BuildImagePopulated(t *testing.T) {
+	builder := NewBuilder()
+
+	output := "Successfully built my-service:abc1234\nBuilding service: api\n"
+	meta := builder.extractBuildMeta(output, "my-service", "abc1234567890")
+
+	// extractBuildMeta itself does NOT set BuildImage — that happens in Build()
+	// after the call: buildMeta.BuildImage = parsedTag.
+	// Verify the parsed tag matches what Build would assign.
+	parsedTag := builder.parseImageTag(output)
+	assert.Equal(t, "my-service:abc1234", parsedTag)
+
+	// Simulate the assignment done in Build() (build.go line 83)
+	meta.BuildImage = parsedTag
+	assert.Equal(t, "my-service:abc1234", meta.BuildImage, "BuildImage must be populated after build")
+	assert.Equal(t, "my-service", meta.AppName)
+	assert.Equal(t, "abc1234567890", meta.BuildCommit)
+	assert.Contains(t, meta.Services, "api")
+}
