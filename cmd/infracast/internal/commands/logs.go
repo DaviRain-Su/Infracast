@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -24,6 +25,8 @@ func newLogsCommand() *cobra.Command {
 		limit   int
 		since   string
 		traceID string
+		format  string
+		output  string
 	)
 
 	cmd := &cobra.Command{
@@ -51,7 +54,13 @@ Examples:
   infracast logs --limit 50
 
   # Trace a specific deploy run
-  infracast logs --trace trc_1234567890`,
+  infracast logs --trace trc_1234567890
+
+  # Output as JSON (for scripting)
+  infracast logs --format json
+
+  # Wide output with full trace IDs and longer messages
+  infracast logs --output wide`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLogs(LogsOptions{
 				Env:     env,
@@ -60,6 +69,8 @@ Examples:
 				Limit:   limit,
 				Since:   since,
 				TraceID: traceID,
+				Format:  format,
+				Output:  output,
 			})
 		},
 	}
@@ -70,6 +81,8 @@ Examples:
 	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum number of entries to show")
 	cmd.Flags().StringVar(&since, "since", "", "Show logs since duration (e.g., 1h, 24h, 7d)")
 	cmd.Flags().StringVar(&traceID, "trace", "", "Filter by trace ID (e.g., trc_1234567890)")
+	cmd.Flags().StringVarP(&format, "format", "f", "table", "Output format: table, json")
+	cmd.Flags().StringVarP(&output, "output", "o", "short", "Output width: short, wide")
 
 	return cmd
 }
@@ -82,6 +95,8 @@ type LogsOptions struct {
 	Limit   int
 	Since   string
 	TraceID string
+	Format  string
+	Output  string
 }
 
 // runLogs executes the logs command
@@ -131,16 +146,71 @@ func runLogs(opts LogsOptions) error {
 
 	// Display results
 	if len(events) == 0 {
-		fmt.Println("No audit logs found matching the criteria.")
+		if opts.Format == "json" {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("No audit logs found matching the criteria.")
+		}
 		return nil
 	}
 
-	printLogs(events)
+	if opts.Format == "json" {
+		return printLogsJSON(events)
+	}
+
+	printLogs(events, opts.Output == "wide")
 	return nil
 }
 
+// printLogsJSON outputs audit events as JSON for scripting
+func printLogsJSON(events []state.AuditEvent) error {
+	type jsonEvent struct {
+		ID        string                 `json:"id"`
+		TraceID   string                 `json:"trace_id,omitempty"`
+		Timestamp string                 `json:"timestamp"`
+		Level     string                 `json:"level"`
+		Action    string                 `json:"action"`
+		Step      string                 `json:"step,omitempty"`
+		Status    string                 `json:"status,omitempty"`
+		Env       string                 `json:"env,omitempty"`
+		Duration  string                 `json:"duration,omitempty"`
+		Message   string                 `json:"message"`
+		Error     string                 `json:"error,omitempty"`
+		ErrorCode string                 `json:"error_code,omitempty"`
+		RequestID string                 `json:"request_id,omitempty"`
+		Details   map[string]interface{} `json:"details,omitempty"`
+	}
+
+	out := make([]jsonEvent, 0, len(events))
+	for _, e := range events {
+		je := jsonEvent{
+			ID:        e.ID,
+			TraceID:   e.TraceID,
+			Timestamp: e.Timestamp.Format(time.RFC3339),
+			Level:     string(e.Level),
+			Action:    e.Action,
+			Step:      e.Step,
+			Status:    e.Status,
+			Env:       e.Env,
+			Message:   e.Message,
+			Error:     e.Error,
+			ErrorCode: e.ErrorCode,
+			RequestID: e.RequestID,
+			Details:   e.Details,
+		}
+		if e.Duration > 0 {
+			je.Duration = e.Duration.Round(time.Second).String()
+		}
+		out = append(out, je)
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
 // printLogs displays audit events in a formatted table
-func printLogs(events []state.AuditEvent) {
+func printLogs(events []state.AuditEvent, wide bool) {
 	fmt.Println()
 	color.Cyan("Audit Logs (%d entries):", len(events))
 	fmt.Println()
@@ -149,15 +219,25 @@ func printLogs(events []state.AuditEvent) {
 	fmt.Fprintln(w, "TIME\tTRACE\tLEVEL\tACTION\tSTEP\tSTATUS\tENV\tDURATION\tMESSAGE")
 	fmt.Fprintln(w, "----\t-----\t-----\t------\t----\t------\t---\t--------\t-------")
 
-	for _, event := range events {
-		// Format timestamp
-		timestamp := event.Timestamp.Format("2006-01-02 15:04")
+	// Determine format settings based on width mode
+	timeFmt := "2006-01-02 15:04:05"
+	traceLen := 16
+	msgLen := 60
+	if !wide {
+		timeFmt = "2006-01-02 15:04"
+		traceLen = 12
+		msgLen = 40
+	}
 
-		// Format trace ID (short form)
+	for _, event := range events {
+		// Format timestamp (with seconds in both modes now)
+		timestamp := event.Timestamp.Format(timeFmt)
+
+		// Format trace ID
 		traceStr := "-"
 		if event.TraceID != "" {
-			if len(event.TraceID) > 12 {
-				traceStr = event.TraceID[:12]
+			if !wide && len(event.TraceID) > traceLen {
+				traceStr = event.TraceID[:traceLen] + "..."
 			} else {
 				traceStr = event.TraceID
 			}
@@ -175,14 +255,7 @@ func printLogs(events []state.AuditEvent) {
 		}
 
 		// Format status with color
-		statusStr := event.Status
-		if statusStr == "" {
-			statusStr = "-"
-		} else if statusStr == "ok" {
-			statusStr = color.GreenString("ok")
-		} else if statusStr == "fail" {
-			statusStr = color.RedString("fail")
-		}
+		statusStr := formatStatus(event.Status)
 
 		// Format step
 		stepStr := event.Step
@@ -203,7 +276,7 @@ func printLogs(events []state.AuditEvent) {
 		}
 
 		// Build message with error code if present
-		msg := truncateString(event.Message, 40)
+		msg := truncateString(event.Message, msgLen)
 		if event.ErrorCode != "" {
 			msg = event.ErrorCode + ": " + msg
 		}
@@ -224,8 +297,10 @@ func printLogs(events []state.AuditEvent) {
 	w.Flush()
 
 	// Show error details at the bottom for visibility
+	hasErrors := false
 	for _, event := range events {
 		if event.Level == state.AuditLevelError && event.Error != "" {
+			hasErrors = true
 			color.Red("\n  Error in [%s/%s]:", event.Action, event.Step)
 			if event.ErrorCode != "" {
 				fmt.Printf("    Code:       %s\n", event.ErrorCode)
@@ -237,8 +312,52 @@ func printLogs(events []state.AuditEvent) {
 		}
 	}
 
-	w.Flush()
+	// Summary footer with counts by level
 	fmt.Println()
+	infoCount, warnCount, errCount := 0, 0, 0
+	for _, event := range events {
+		switch event.Level {
+		case state.AuditLevelInfo:
+			infoCount++
+		case state.AuditLevelWarning:
+			warnCount++
+		case state.AuditLevelError:
+			errCount++
+		}
+	}
+
+	summary := fmt.Sprintf("  %s %d info", color.GreenString("●"), infoCount)
+	if warnCount > 0 {
+		summary += fmt.Sprintf("  %s %d warn", color.YellowString("●"), warnCount)
+	}
+	if errCount > 0 {
+		summary += fmt.Sprintf("  %s %d error", color.RedString("●"), errCount)
+	}
+	fmt.Println(summary)
+
+	if hasErrors {
+		fmt.Println()
+		color.Yellow("  Hint: Use --trace <id> to see full pipeline for a specific run.")
+		color.Yellow("  Hint: See docs/error-code-matrix.md for error code reference.")
+	}
+
+	fmt.Println()
+}
+
+// formatStatus returns a color-coded status string
+func formatStatus(status string) string {
+	switch status {
+	case "ok":
+		return color.GreenString("ok")
+	case "fail":
+		return color.RedString("fail")
+	case "skip":
+		return color.YellowString("skip")
+	case "":
+		return "-"
+	default:
+		return status
+	}
 }
 
 // truncateString truncates a string to max length with ellipsis
