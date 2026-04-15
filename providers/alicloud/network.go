@@ -3,6 +3,7 @@ package alicloud
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/sdk/requests"
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/vpc"
@@ -81,6 +82,12 @@ func (p *Provider) ensureVPC(region string) (string, error) {
 	if resp == nil || resp.VpcId == "" {
 		return "", fmt.Errorf("failed to create default VPC: empty VPC ID in response")
 	}
+	
+	// Wait for VPC to become Available
+	if err := p.waitForVPCAvailable(resp.VpcId); err != nil {
+		return "", fmt.Errorf("failed to wait for VPC to become available: %w", err)
+	}
+	
 	return resp.VpcId, nil
 }
 
@@ -119,6 +126,33 @@ func networkVPCName(region string) string {
 
 func networkVSwitchName(region string) string {
 	return fmt.Sprintf("%s-%s", networkVSwitchNamePrefix, region)
+}
+
+// waitForVPCAvailable polls until the VPC status becomes "Available"
+func (p *Provider) waitForVPCAvailable(vpcID string) error {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	timeout := time.After(2 * time.Minute)
+	
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for VPC %s to become Available", vpcID)
+		case <-ticker.C:
+			req := vpc.CreateDescribeVpcsRequest()
+			req.VpcId = vpcID
+			req.RegionId = p.region
+			
+			resp, err := p.vpcClient.DescribeVpcs(req)
+			if err != nil {
+				continue // Retry on error
+			}
+			
+			if len(resp.Vpcs.Vpc) > 0 && resp.Vpcs.Vpc[0].Status == "Available" {
+				return nil
+			}
+		}
+	}
 }
 
 // TODO: Persist network IDs in state store for cross-process reuse.
