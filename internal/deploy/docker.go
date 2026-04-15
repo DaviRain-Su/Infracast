@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/cr"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
@@ -18,10 +19,12 @@ const (
 
 // ACRClient wraps AliCloud Container Registry operations
 type ACRClient struct {
-	client    *cr.Client
-	region    string
-	namespace string
-	timeout   time.Duration
+	client        *cr.Client
+	region        string
+	namespace     string
+	timeout       time.Duration
+	accessKeyID   string
+	accessKeySecret string
 }
 
 // NewACRClient creates a new ACR client
@@ -41,10 +44,12 @@ func NewACRClientWithTimeout(region, accessKeyID, accessKeySecret, namespace str
 	}
 
 	return &ACRClient{
-		client:    client,
-		region:    region,
-		namespace: namespace,
-		timeout:   timeout,
+		client:          client,
+		region:          region,
+		namespace:       namespace,
+		timeout:         timeout,
+		accessKeyID:     accessKeyID,
+		accessKeySecret: accessKeySecret,
 	}, nil
 }
 
@@ -76,7 +81,7 @@ func (a *ACRClient) PushImage(ctx context.Context, localImage, tag string) (stri
 	return "", fmt.Errorf("EDEPLOY040: failed to push image after 3 attempts: %w", lastErr)
 }
 
-// pushWithSDK pushes image using go-containerregistry
+// pushWithSDK pushes image using go-containerregistry with ACR authentication
 func (a *ACRClient) pushWithSDK(ctx context.Context, localImage, acrImage string) error {
 	if localImage == "" || acrImage == "" {
 		return fmt.Errorf("EDEPLOY042: invalid image name")
@@ -100,12 +105,35 @@ func (a *ACRClient) pushWithSDK(ctx context.Context, localImage, acrImage string
 		return fmt.Errorf("EDEPLOY045: failed to pull source image: %w", err)
 	}
 
-	// Push to ACR (using anonymous auth for now, should use ACR credentials)
-	if err := remote.Write(dstRef, srcImg, remote.WithContext(ctx)); err != nil {
+	// Get ACR authentication token
+	auth, err := a.getACRAuth(ctx)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY047: failed to get ACR auth: %w", err)
+	}
+
+	// Push to ACR with authentication
+	if err := remote.Write(dstRef, srcImg, remote.WithContext(ctx), remote.WithAuth(auth)); err != nil {
 		return fmt.Errorf("EDEPLOY046: failed to push image to ACR: %w", err)
 	}
 
 	return nil
+}
+
+// getACRAuth creates ACR authenticator using access key credentials
+// For ACR Personal Edition, the access key ID is used as username and 
+// access key secret as password
+func (a *ACRClient) getACRAuth(ctx context.Context) (authn.Authenticator, error) {
+	if a.accessKeyID == "" || a.accessKeySecret == "" {
+		return nil, fmt.Errorf("ACR credentials not initialized")
+	}
+	
+	// ACR Personal Edition authentication uses access key as credentials
+	// Username: access key ID
+	// Password: access key secret
+	return authn.FromConfig(authn.AuthConfig{
+		Username: a.accessKeyID,
+		Password: a.accessKeySecret,
+	}), nil
 }
 
 // getACREndpoint returns the ACR endpoint for a region
