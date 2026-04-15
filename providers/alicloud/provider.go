@@ -642,47 +642,84 @@ func (p *Provider) createRedisWithNewVSwitch(vpcID, instanceClass string, spec p
 		return nil, fmt.Errorf("failed to describe available zones for Redis: %w", err)
 	}
 
+	lastErr := ""
 	// Try each available zone
 	for i, zone := range zoneResp.AvailableZones.AvailableZone {
 		zoneID := zone.ZoneId
-		
-		// Create VSwitch in this zone
-		vswReq := vpc.CreateCreateVSwitchRequest()
-		vswReq.RegionId = p.region
-		vswReq.VpcId = vpcID
-		vswReq.ZoneId = zoneID
-		vswReq.CidrBlock = fmt.Sprintf("10.0.%d.0/24", 10+i)
-		vswReq.VSwitchName = fmt.Sprintf("infracast-redis-%s-%d", zoneID, time.Now().UnixNano())
-		
-		vswResp, err := p.vpcClient.CreateVSwitch(vswReq)
-		if err != nil {
-			continue // Try next zone
+
+		for _, cidrBlock := range candidateRedisVSwitchCIDRs(i) {
+			// Create VSwitch in this zone
+			vswReq := vpc.CreateCreateVSwitchRequest()
+			vswReq.RegionId = p.region
+			vswReq.VpcId = vpcID
+			vswReq.ZoneId = zoneID
+			vswReq.CidrBlock = cidrBlock
+			vswReq.VSwitchName = fmt.Sprintf("infracast-redis-%s-%d", zoneID, time.Now().UnixNano())
+
+			vswResp, err := p.vpcClient.CreateVSwitch(vswReq)
+			if err != nil {
+				lastErr = fmt.Sprintf("zone=%s cidr=%s create-vswitch=%v", zoneID, cidrBlock, err)
+				// try next cidr in this zone
+				continue
+			}
+
+			// Try creating Redis with this VSwitch
+			request := r_kvstore.CreateCreateInstanceRequest()
+			request.VpcId = vpcID
+			request.VSwitchId = vswResp.VSwitchId
+			request.RegionId = p.region
+			request.InstanceClass = instanceClass
+			request.InstanceType = "Redis"
+			request.EngineVersion = spec.Version
+			if request.EngineVersion == "" {
+				request.EngineVersion = "5.0"
+			}
+
+			resp, err := p.kvstoreClient.CreateInstance(request)
+			if err == nil {
+				return resp, nil
+			}
+			lastErr = fmt.Sprintf("zone=%s cidr=%s create-redis=%v", zoneID, cidrBlock, err)
+
+			// Clean up the VSwitch we created if Redis creation failed
+			deleteReq := vpc.CreateDeleteVSwitchRequest()
+			deleteReq.VSwitchId = vswResp.VSwitchId
+			_, _ = p.vpcClient.DeleteVSwitch(deleteReq) // Best effort cleanup
 		}
-		
-		// Try creating Redis with this VSwitch
-		request := r_kvstore.CreateCreateInstanceRequest()
-		request.VpcId = vpcID
-		request.VSwitchId = vswResp.VSwitchId
-		request.RegionId = p.region
-		request.InstanceClass = instanceClass
-		request.InstanceType = "Redis"
-		request.EngineVersion = spec.Version
-		if request.EngineVersion == "" {
-			request.EngineVersion = "5.0"
-		}
-		
-		resp, err := p.kvstoreClient.CreateInstance(request)
-		if err == nil {
-			return resp, nil
-		}
-		
-		// Clean up the VSwitch we created if Redis creation failed
-		deleteReq := vpc.CreateDeleteVSwitchRequest()
-		deleteReq.VSwitchId = vswResp.VSwitchId
-		_, _ = p.vpcClient.DeleteVSwitch(deleteReq) // Best effort cleanup
 	}
-	
+
+	if lastErr != "" {
+		return nil, fmt.Errorf("failed to create Redis in any available zone: %s", lastErr)
+	}
 	return nil, fmt.Errorf("failed to create Redis in any available zone")
+}
+
+func candidateRedisVSwitchCIDRs(zoneIdx int) []string {
+	base := 10 + (zoneIdx % 20)
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 12)
+	add := func(n int) {
+		if n < 1 || n > 250 {
+			return
+		}
+		c := fmt.Sprintf("10.0.%d.0/24", n)
+		if _, ok := seen[c]; ok {
+			return
+		}
+		seen[c] = struct{}{}
+		out = append(out, c)
+	}
+
+	// Try a small set of deterministic + time-salted CIDR candidates.
+	add(base)
+	add(base + 20)
+	add(base + 40)
+	add(base + 60)
+	add(base + 80)
+	add(base + 100)
+	add(int(time.Now().UnixNano()%100) + 120)
+	add(int(time.Now().UnixNano()%80) + 20)
+	return out
 }
 
 // setCachePassword sets the password for the Redis instance
