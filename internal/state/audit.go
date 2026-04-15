@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -87,8 +88,11 @@ func (s *AuditStore) InitAuditTable() error {
 		"ALTER TABLE audit_log ADD COLUMN request_id TEXT",
 	}
 	for _, m := range migrations {
-		// Ignore "duplicate column" errors — column already exists
-		s.db.Exec(m)
+		if _, err := s.db.Exec(m); err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+				return fmt.Errorf("audit migration failed (%s): %w", m, err)
+			}
+		}
 	}
 
 	// Ensure index exists (idempotent via IF NOT EXISTS)
