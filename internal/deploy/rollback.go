@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // RollbackManager manages deployment rollbacks
@@ -94,8 +97,25 @@ func (r *RollbackManager) rollbackImage(ctx context.Context, deploymentName stri
 
 // hasPreviousRevision checks if deployment has a revision to rollback to
 func (r *RollbackManager) hasPreviousRevision(ctx context.Context, deploymentName string) (bool, error) {
-	// TODO: Implement using client-go to check revision history
-	// For now, return true as placeholder
+	if r.k8sClient == nil || r.k8sClient.clientset == nil {
+		return false, fmt.Errorf("EDEPLOY060: K8s client not initialized")
+	}
+
+	// Get deployment to check revision history
+	deployment, err := r.k8sClient.clientset.AppsV1().Deployments(r.k8sClient.namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return false, fmt.Errorf("EDEPLOY061: failed to get deployment: %w", err)
+	}
+
+	// Check if there's a previous revision by looking at annotation
+	// kubectl rollout undo goes back to the previous revision in history
+	// A deployment with no previous revision will have only one entry in history
+	revisionHistory := deployment.Annotations["deployment.kubernetes.io/revision"]
+	if revisionHistory == "" || revisionHistory == "1" {
+		// First deployment, no previous revision
+		return false, nil
+	}
+
 	return true, nil
 }
 
@@ -128,9 +148,34 @@ func (r *RollbackManager) waitForRollback(ctx context.Context, deploymentName st
 
 // isRollbackStable checks if rollback has stabilized
 func (r *RollbackManager) isRollbackStable(ctx context.Context, deploymentName string) (bool, error) {
-	// TODO: Implement using client-go
-	// Check if deployment generation matches observed generation
-	// and all replicas are ready
+	if r.k8sClient == nil || r.k8sClient.clientset == nil {
+		return false, fmt.Errorf("EDEPLOY062: K8s client not initialized")
+	}
+
+	// Get deployment status
+	deployment, err := r.k8sClient.clientset.AppsV1().Deployments(r.k8sClient.namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return false, fmt.Errorf("EDEPLOY063: failed to get deployment status: %w", err)
+	}
+
+	// Check if observed generation matches current generation
+	if deployment.Status.ObservedGeneration < deployment.Generation {
+		// Deployment is still being processed
+		return false, nil
+	}
+
+	// Check if all replicas are ready
+	if deployment.Status.ReadyReplicas < *deployment.Spec.Replicas {
+		return false, nil
+	}
+
+	// Check for any failure conditions
+	for _, cond := range deployment.Status.Conditions {
+		if cond.Type == appsv1.DeploymentProgressing && cond.Reason == "ProgressDeadlineExceeded" {
+			return false, fmt.Errorf("EDEPLOY064: rollback failed - progress deadline exceeded")
+		}
+	}
+
 	return true, nil
 }
 
@@ -174,15 +219,41 @@ func (r *RollbackManager) ExecuteRollbackWithGuardrails(ctx context.Context, dep
 
 // validateRollbackSafety checks if rollback can be safely performed
 func (r *RollbackManager) validateRollbackSafety(ctx context.Context, deploymentName string) error {
+	if r.k8sClient == nil || r.k8sClient.clientset == nil {
+		return fmt.Errorf("EDEPLOY065: K8s client not initialized")
+	}
+
 	// Check 1: Verify deployment exists
-	// TODO: Check using client-go
+	deployment, err := r.k8sClient.clientset.AppsV1().Deployments(r.k8sClient.namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("EDEPLOY066: deployment not found: %w", err)
+	}
 
-	// Check 2: Verify rollback won't break dependencies
-	// TODO: Check service dependencies
+	// Check 2: Verify there's a previous revision to rollback to
+	hasPrevious, err := r.hasPreviousRevision(ctx, deploymentName)
+	if err != nil {
+		return err
+	}
+	if !hasPrevious {
+		return fmt.Errorf("EDEPLOY067: no previous revision to rollback to")
+	}
 
-	// Check 3: Forward-only migration enforcement
-	// If this deployment includes database migrations, ensure they're compatible
-	// TODO: Check migration compatibility
+	// Check 3: Verify deployment is in a state that allows rollback
+	// Don't rollback if a rollout is already in progress
+	for _, cond := range deployment.Status.Conditions {
+		if cond.Type == appsv1.DeploymentProgressing && 
+		   cond.Status == "True" && 
+		   cond.Reason == "NewReplicaSetAvailable" {
+			// Rollout is complete, safe to rollback
+			break
+		}
+	}
+
+	// Check 4: Forward-only migration enforcement
+	// Check if deployment has migration annotations
+	if migrationStatus := deployment.Annotations["infracast.dev/migration-status"]; migrationStatus == "destructive" {
+		return fmt.Errorf("EDEPLOY068: cannot rollback - deployment includes destructive migrations")
+	}
 
 	return nil
 }

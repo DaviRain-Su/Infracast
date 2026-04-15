@@ -8,6 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// boolPtr returns a pointer to a bool value
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // Test 1: Same input produces same hash
 func TestSpecHash_Determinism(t *testing.T) {
 	spec := providers.DatabaseSpec{
@@ -15,7 +20,7 @@ func TestSpecHash_Determinism(t *testing.T) {
 		Version:       "8.0",
 		InstanceClass: "rds.mysql.s1.small",
 		StorageGB:     50,
-		HighAvail:     true,
+		HighAvail:     boolPtr(true),
 	}
 
 	hash1, err := SpecHash(ResourceTypeDatabase, spec)
@@ -88,14 +93,14 @@ func TestSpecHash_Database_Fields(t *testing.T) {
 				Version:       "8.0",
 				InstanceClass: "rds.mysql.s1.small",
 				StorageGB:     50,
-				HighAvail:     true,
+				HighAvail:     boolPtr(true),
 			},
 			spec2: providers.DatabaseSpec{
 				Engine:        "mysql",
 				Version:       "8.0",
 				InstanceClass: "rds.mysql.s1.small",
 				StorageGB:     50,
-				HighAvail:     true,
+				HighAvail:     boolPtr(true),
 			},
 			sameHash: true,
 		},

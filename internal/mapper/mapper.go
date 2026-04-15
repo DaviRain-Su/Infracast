@@ -83,7 +83,7 @@ func (m *Mapper) mapDatabase(name string) providers.ResourceSpec {
 		Version:       "15",         // Default
 		InstanceClass: "rds.pg.s1.small",
 		StorageGB:     20, // Default per Tech Spec v1.1
-		HighAvail:     false,
+		HighAvail:     nil, // Default: no HA preference
 	}
 
 	// Apply overrides from config

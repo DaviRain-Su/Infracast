@@ -103,7 +103,7 @@ func TestMapper_mapDatabase(t *testing.T) {
 	assert.Equal(t, "postgresql", spec.DatabaseSpec.Engine)
 	assert.Equal(t, "rds.pg.s1.small", spec.DatabaseSpec.InstanceClass)
 	assert.Equal(t, 20, spec.DatabaseSpec.StorageGB) // Fixed: 50 -> 20
-	assert.False(t, spec.DatabaseSpec.HighAvail)
+	assert.Nil(t, spec.DatabaseSpec.HighAvail)
 }
 
 func TestMapper_mapCache(t *testing.T) {

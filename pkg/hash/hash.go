@@ -66,9 +66,15 @@ func SpecHash(resourceType ResourceType, spec interface{}) (string, error) {
 // specHashDatabase generates canonical hash for database spec
 func specHashDatabase(spec providers.DatabaseSpec) string {
 	// Build map with canonical field order (alphabetical)
+	// Handle *bool for HighAvail - use nil if nil, otherwise dereference
+	highAvail := interface{}(nil)
+	if spec.HighAvail != nil {
+		highAvail = *spec.HighAvail
+	}
+	
 	m := map[string]interface{}{
 		"engine":         spec.Engine,
-		"high_avail":     spec.HighAvail,
+		"high_avail":     highAvail,
 		"instance_class": spec.InstanceClass,
 		"storage_gb":     spec.StorageGB,
 		"version":        spec.Version,
