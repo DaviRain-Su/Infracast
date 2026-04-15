@@ -330,7 +330,55 @@ infracast logs --limit 1
 
 ---
 
-## 5. Quick Reference
+## 5. Download and Verify Release
+
+### 5.1 Download
+
+Download the pre-built binary for your platform from [Releases](https://github.com/DaviRain-Su/Infracast/releases):
+
+```bash
+# Example: Apple Silicon (darwin/arm64)
+VERSION="v0.1.0"
+curl -LO "https://github.com/DaviRain-Su/Infracast/releases/download/${VERSION}/infracast_${VERSION}_darwin_arm64.tar.gz"
+curl -LO "https://github.com/DaviRain-Su/Infracast/releases/download/${VERSION}/checksums.txt"
+```
+
+Available platforms:
+- `infracast_<version>_darwin_amd64.tar.gz` — macOS Intel
+- `infracast_<version>_darwin_arm64.tar.gz` — macOS Apple Silicon
+- `infracast_<version>_linux_amd64.tar.gz` — Linux x86_64
+
+### 5.2 Verify Checksum
+
+```bash
+shasum -a 256 -c checksums.txt --ignore-missing
+# Expected: infracast_v0.1.0_darwin_arm64.tar.gz: OK
+```
+
+### 5.3 Install
+
+```bash
+tar xzf "infracast_${VERSION}_darwin_arm64.tar.gz"
+sudo mv "infracast_${VERSION}_darwin_arm64/infracast" /usr/local/bin/
+infracast version
+# Expected:
+# infracast version v0.1.0
+#   commit: abc1234
+#   build time: 2026-04-15_12:00:00
+```
+
+### 5.4 Build from Source
+
+```bash
+git clone https://github.com/DaviRain-Su/Infracast.git
+cd Infracast
+make build
+./bin/infracast version
+```
+
+---
+
+## 6. Quick Reference
 
 | Task | Command |
 |------|---------|

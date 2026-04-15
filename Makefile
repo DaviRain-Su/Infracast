@@ -56,21 +56,33 @@ vet: ## Run go vet
 	@echo "Running go vet..."
 	@go vet ./...
 
-release: ## Build release binaries for all platforms
-	@echo "Building release binaries..."
+release-build: ## Build release binaries and package as tar.gz for all platforms
+	@echo "Building release binaries ($(VERSION))..."
+	@rm -rf $(RELEASE_DIR)
 	@mkdir -p $(RELEASE_DIR)
 	@for platform in $(PLATFORMS); do \
 		GOOS=$$(echo $$platform | cut -d'/' -f1); \
 		GOARCH=$$(echo $$platform | cut -d'/' -f2); \
-		OUTPUT=$(RELEASE_DIR)/$(BINARY_NAME)-$(VERSION)-$$GOOS-$$GOARCH; \
-		if [ "$$GOOS" = "windows" ]; then OUTPUT=$$OUTPUT.exe; fi; \
+		ARCHIVE_NAME=$(BINARY_NAME)_$(VERSION)_$${GOOS}_$${GOARCH}; \
+		TMPDIR=$(RELEASE_DIR)/$$ARCHIVE_NAME; \
 		echo "  Building $$GOOS/$$GOARCH..."; \
-		GOOS=$$GOOS GOARCH=$$GOARCH go build $(LDFLAGS) -o $$OUTPUT ./cmd/$(BINARY_NAME); \
+		mkdir -p $$TMPDIR; \
+		GOOS=$$GOOS GOARCH=$$GOARCH go build $(LDFLAGS) -o $$TMPDIR/$(BINARY_NAME) ./cmd/$(BINARY_NAME); \
+		tar -czf $(RELEASE_DIR)/$$ARCHIVE_NAME.tar.gz -C $(RELEASE_DIR) $$ARCHIVE_NAME; \
+		rm -rf $$TMPDIR; \
 	done
-	@echo "Release binaries built in $(RELEASE_DIR)/"
-	@ls -lh $(RELEASE_DIR)/
+	@echo ""
+	@echo "Release archives built in $(RELEASE_DIR)/:"
+	@ls -lh $(RELEASE_DIR)/*.tar.gz
 
-release-checksums: ## Generate checksums for release binaries
+release-checksums: release-build ## Generate SHA-256 checksums for release archives
 	@echo "Generating checksums..."
-	@cd $(RELEASE_DIR) && sha256sum * > checksums.txt
+	@cd $(RELEASE_DIR) && shasum -a 256 *.tar.gz > checksums.txt
 	@echo "Checksums saved to $(RELEASE_DIR)/checksums.txt"
+	@cat $(RELEASE_DIR)/checksums.txt
+
+release: release-checksums ## Build release archives with checksums (full pipeline)
+	@echo ""
+	@echo "Release complete: $(VERSION)"
+	@echo "  Archives: $(RELEASE_DIR)/*.tar.gz"
+	@echo "  Checksums: $(RELEASE_DIR)/checksums.txt"
