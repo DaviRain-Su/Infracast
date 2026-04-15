@@ -146,8 +146,8 @@ notifications:
 
 ### 了解更多
 
-- [Technical Spec](../../03-technical-spec.md)
-- [Task Breakdown](../../04-task-breakdown.md)
+- [Technical Spec](../03-technical-spec.md)
+- [Task Breakdown](../04-task-breakdown.md)
 - [单云运维手册](06-single-cloud-operations.md)
 
 ## 快速命令流程
