@@ -285,11 +285,37 @@ func (p *Pipeline) stepGenerateConfig(ctx context.Context, input *PipelineInput)
 // stepDeploy deploys to K8s
 func (p *Pipeline) stepDeploy(ctx context.Context, input *PipelineInput) error {
 	if p.k8sClient == nil {
-		return fmt.Errorf("K8s client not initialized")
+		return fmt.Errorf("EDEPLOY010: K8s client not initialized")
 	}
 	
 	p.log("  Generating K8s manifests...")
-	// TODO: Generate and apply manifests
+	
+	// Create deploy config
+	deployCfg := &DeployConfig{
+		AppName:    input.AppName,
+		Env:        input.Env,
+		Image:      input.ImageTag,
+		Commit:     input.Commit,
+		Replicas:   input.Replicas,
+		Port:       input.Port,
+		EnvVars:    input.EnvVars,
+		ConfigPath: input.ConfigPath,
+	}
+	
+	// Generate manifests
+	resources, err := p.k8sClient.GenerateManifests(deployCfg, nil)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY012: failed to generate manifests: %w", err)
+	}
+	
+	p.log("  Applying manifests to cluster...")
+	
+	// Apply manifests
+	if err := p.k8sClient.Apply(ctx, resources); err != nil {
+		return fmt.Errorf("EDEPLOY014: failed to apply manifests: %w", err)
+	}
+	
+	p.log("  Deployment applied successfully")
 	return nil
 }
 

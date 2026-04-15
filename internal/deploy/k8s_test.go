@@ -28,7 +28,7 @@ func TestGenerateManifests(t *testing.T) {
 		},
 	}
 
-	infraCfg := &infragen.InfraConfig{
+	infraCfg := &infragen.InfraCfg{
 		SQLServers: map[string]infragen.SQLServer{
 			"users": {Host: "localhost", Port: 5432},
 		},

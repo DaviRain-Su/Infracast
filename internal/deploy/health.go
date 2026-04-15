@@ -4,7 +4,10 @@ package deploy
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // HealthChecker checks deployment health status
@@ -85,27 +88,42 @@ func (h *HealthChecker) CheckStatus(ctx context.Context, deploymentName string, 
 	}
 }
 
-// getDeploymentStatus retrieves current deployment status
+// getDeploymentStatus retrieves current deployment status from K8s API
 func (h *HealthChecker) getDeploymentStatus(ctx context.Context, deploymentName string) (*DeploymentStatus, error) {
-	// TODO: Implement actual status retrieval using client-go
-	// For now, return a placeholder that simulates a ready deployment
-	return &DeploymentStatus{
-		Name:              deploymentName,
-		Replicas:          2,
-		ReadyReplicas:     2,
-		AvailableReplicas: 2,
-		Conditions: []DeploymentCondition{
-			{
-				Type:   "Progressing",
-				Status: "True",
-				Reason: "NewReplicaSetAvailable",
-			},
-			{
-				Type:   "Available",
-				Status: "True",
-			},
-		},
-	}, nil
+	if h.k8sClient == nil || h.k8sClient.clientset == nil {
+		return nil, fmt.Errorf("EDEPLOY051: K8s client not initialized")
+	}
+
+	// Get deployment from K8s API
+	deployment, err := h.k8sClient.clientset.AppsV1().Deployments(h.k8sClient.namespace).Get(ctx, deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("EDEPLOY052: failed to get deployment: %w", err)
+	}
+
+	// Convert to DeploymentStatus
+	status := &DeploymentStatus{
+		Name:               deployment.Name,
+		Namespace:          deployment.Namespace,
+		Replicas:           *deployment.Spec.Replicas,
+		ReadyReplicas:      deployment.Status.ReadyReplicas,
+		UpdatedReplicas:    deployment.Status.UpdatedReplicas,
+		AvailableReplicas:  deployment.Status.AvailableReplicas,
+		ObservedGeneration: deployment.Status.ObservedGeneration,
+		Conditions:         make([]DeploymentCondition, len(deployment.Status.Conditions)),
+	}
+
+	// Convert conditions
+	for i, cond := range deployment.Status.Conditions {
+		status.Conditions[i] = DeploymentCondition{
+			Type:               string(cond.Type),
+			Status:             string(cond.Status),
+			Reason:             cond.Reason,
+			Message:            cond.Message,
+			LastTransitionTime: cond.LastTransitionTime.Time,
+		}
+	}
+
+	return status, nil
 }
 
 // isDeploymentReady checks if deployment is fully ready
@@ -164,11 +182,42 @@ func (h *HealthChecker) rollbackOnFailure(ctx context.Context, deploymentName st
 
 // VerifyHealth performs a health check on the deployed application
 func (h *HealthChecker) VerifyHealth(ctx context.Context, serviceName string, port int) error {
-	// TODO: Implement actual health check by calling the service endpoint
-	// This would typically:
-	// 1. Get service endpoint from K8s
-	// 2. Call /health or similar endpoint
-	// 3. Verify response
+	if h.k8sClient == nil || h.k8sClient.clientset == nil {
+		return fmt.Errorf("EDEPLOY053: K8s client not initialized")
+	}
+
+	// Get service endpoint
+	service, err := h.k8sClient.clientset.CoreV1().Services(h.k8sClient.namespace).Get(ctx, serviceName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("EDEPLOY054: failed to get service: %w", err)
+	}
+
+	// Build health check URL (using cluster IP and port)
+	var targetPort int32
+	if len(service.Spec.Ports) > 0 {
+		targetPort = service.Spec.Ports[0].Port
+	} else {
+		targetPort = int32(port)
+	}
+
+	healthURL := fmt.Sprintf("http://%s:%d/health", service.Spec.ClusterIP, targetPort)
+
+	// Perform health check with timeout
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY055: failed to create health check request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("EDEPLOY056: health check failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("EDEPLOY057: health check returned non-OK status: %d", resp.StatusCode)
+	}
 
 	return nil
 }

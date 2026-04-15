@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DaviRain-Su/infracast/pkg/infragen"
+	"github.com/DaviRain-Su/infracast/internal/infragen"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,7 +75,7 @@ func (k *K8sClient) initClient() error {
 }
 
 // GenerateManifests creates Kubernetes Deployment and Service YAML
-func (k *K8sClient) GenerateManifests(cfg *DeployConfig, infraCfg *infragen.InfraConfig) (*K8sResources, error) {
+func (k *K8sClient) GenerateManifests(cfg *DeployConfig, infraCfg *infragen.InfraCfg) (*K8sResources, error) {
 	// Generate labels
 	labels := map[string]string{
 		"app":                  cfg.AppName,

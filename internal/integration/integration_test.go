@@ -106,7 +106,7 @@ func TestPipeline_MockProvider_FullCycle(t *testing.T) {
 
 	// Phase 3: Generate - Create infrcfg.json
 	generator := infragen.NewGenerator(nil)
-	cfg := &infragen.InfraConfig{
+	cfg := &infragen.InfraCfg{
 		SQLServers: map[string]infragen.SQLServer{
 			"users": {
 				Host:     "users-db.example.com",
